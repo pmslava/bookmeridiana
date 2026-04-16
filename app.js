@@ -1,0 +1,894 @@
+/* ============================================
+   Meridiana Tennis — Booking App
+   Vanilla JS, no frameworks
+   ============================================ */
+
+(function () {
+  'use strict';
+
+  // ---- i18n strings ----
+  const STRINGS = {
+    en: {
+      bookCourt: 'Book the court',
+      bookCoach: 'Book training with a coach',
+      tagline: 'Book your court or training',
+      loading: 'Loading availability…',
+      noSlots: 'No available slots for this day',
+      noConfig: 'No available hours configured — please contact us',
+      selectDay: 'Select a day to see available times',
+      name: 'Name',
+      namePlaceholder: 'Your full name',
+      email: 'Email',
+      emailPlaceholder: 'your@email.com',
+      phone: 'Phone (optional)',
+      phonePlaceholder: '+381 ...',
+      language: 'Preferred language',
+      book: 'Book',
+      cancel: 'Cancel',
+      bookingTitle: 'Complete your booking',
+      court: 'Court',
+      courts: 'Courts',
+      coach: 'Coach',
+      price: 'Price',
+      total: 'Total',
+      checkEmail: 'Check your email!',
+      checkEmailDesc: 'We sent a confirmation link to your email. Click it to finalize your booking.',
+      bookingError: 'Booking failed. Please try again.',
+      slotTaken: 'This slot was just booked. Please pick another.',
+      chooseCoach: 'Choose a coach',
+      chooseCourt: 'Choose a court',
+      or: 'or',
+    },
+    sr: {
+      bookCourt: 'Rezervišite teren',
+      bookCoach: 'Trening sa trenerom',
+      tagline: 'Rezervišite teren ili trening',
+      loading: 'Učitavanje dostupnosti…',
+      noSlots: 'Nema slobodnih termina za ovaj dan',
+      noConfig: 'Nema podešenih radnih sati — kontaktirajte nas',
+      selectDay: 'Izaberite dan da vidite slobodne termine',
+      name: 'Ime',
+      namePlaceholder: 'Vaše puno ime',
+      email: 'Email',
+      emailPlaceholder: 'vaš@email.com',
+      phone: 'Telefon (opciono)',
+      phonePlaceholder: '+381 ...',
+      language: 'Jezik',
+      book: 'Rezervišite',
+      cancel: 'Otkaži',
+      bookingTitle: 'Završite rezervaciju',
+      court: 'Teren',
+      courts: 'Tereni',
+      coach: 'Trener',
+      price: 'Cena',
+      total: 'Ukupno',
+      checkEmail: 'Proverite email!',
+      checkEmailDesc: 'Poslali smo link za potvrdu na vaš email. Kliknite na njega da finalizujete rezervaciju.',
+      bookingError: 'Rezervacija nije uspela. Pokušajte ponovo.',
+      slotTaken: 'Ovaj termin je upravo rezervisan. Izaberite drugi.',
+      chooseCoach: 'Izaberite trenera',
+      chooseCourt: 'Izaberite teren',
+      or: 'ili',
+    },
+    ru: {
+      bookCourt: 'Забронировать корт',
+      bookCoach: 'Тренировка с тренером',
+      tagline: 'Забронируйте корт или тренировку',
+      loading: 'Загрузка доступности…',
+      noSlots: 'Нет свободных слотов на этот день',
+      noConfig: 'Нет настроенных рабочих часов — свяжитесь с нами',
+      selectDay: 'Выберите день, чтобы увидеть доступное время',
+      name: 'Имя',
+      namePlaceholder: 'Ваше полное имя',
+      email: 'Email',
+      emailPlaceholder: 'ваш@email.com',
+      phone: 'Телефон (необязательно)',
+      phonePlaceholder: '+381 ...',
+      language: 'Язык',
+      book: 'Забронировать',
+      cancel: 'Отмена',
+      bookingTitle: 'Завершите бронирование',
+      court: 'Корт',
+      courts: 'Корты',
+      coach: 'Тренер',
+      price: 'Цена',
+      total: 'Итого',
+      checkEmail: 'Проверьте почту!',
+      checkEmailDesc: 'Мы отправили ссылку для подтверждения на ваш email. Нажмите на неё, чтобы завершить бронирование.',
+      bookingError: 'Бронирование не удалось. Попробуйте снова.',
+      slotTaken: 'Этот слот только что забронирован. Выберите другой.',
+      chooseCoach: 'Выберите тренера',
+      chooseCourt: 'Выберите корт',
+      or: 'или',
+    }
+  };
+
+  const LOCALE_MAP = { en: 'en-US', sr: 'sr-Latn-RS', ru: 'ru-RU' };
+  const DAY_NAMES_MAP = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+  // ---- State ----
+  let config = null;
+  let availability = null; // raw busy intervals from Apps Script
+  let currentLang = 'sr';
+  let currentMode = 'court'; // 'court' or 'coach'
+  let selectedDate = null;
+  let currentMonth = null; // { year, month } displayed
+  let selectedDuration = 1;
+  let expandedSlot = null; // { hour, step } — which slot has picker open
+  let selectedCoach = null; // coach key during selection
+
+  function t(key) { return STRINGS[currentLang]?.[key] || STRINGS.en[key] || key; }
+  function locale() { return LOCALE_MAP[currentLang] || 'en-US'; }
+
+  // ---- Tennis ball SVG inline ----
+  function tennisBallSVG(size) {
+    return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="50" r="48" fill="#c5e84c"/>
+      <path d="M 22 15 Q 50 50, 22 85" stroke="white" stroke-width="3" fill="none" opacity="0.7"/>
+      <path d="M 78 15 Q 50 50, 78 85" stroke="white" stroke-width="3" fill="none" opacity="0.7"/>
+    </svg>`;
+  }
+
+  // ---- Court SVG inline ----
+  function courtSVG(w, h) {
+    // Simplified top-down court, clay color
+    return `<svg width="${w}" height="${h}" viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="200" height="100" rx="4" fill="#c66c4d"/>
+      <rect x="10" y="5" width="180" height="90" fill="none" stroke="white" stroke-width="1.5"/>
+      <line x1="100" y1="5" x2="100" y2="95" stroke="white" stroke-width="1.5"/>
+      <rect x="40" y="5" width="120" height="90" fill="none" stroke="white" stroke-width="1"/>
+      <line x1="40" y1="50" x2="160" y2="50" stroke="white" stroke-width="1"/>
+    </svg>`;
+  }
+
+  // ---- Init ----
+  async function init() {
+    try {
+      const resp = await fetch('config.json');
+      config = await resp.json();
+    } catch (e) {
+      document.getElementById('booking-app').innerHTML =
+        `<div class="error-state"><p>${t('noConfig')}</p></div>`;
+      return;
+    }
+
+    // Fetch business rules (prices, hours, contact, etc.) from the Apps Script
+    // settings endpoint. config.json carries only the bootstrap URL + language
+    // defaults; everything else lives in Script Properties so the friend can
+    // edit it from the admin page without touching GitHub.
+    try {
+      const sResp = await fetch(config.appsScriptUrl + '?action=settings');
+      const settings = await sResp.json();
+      if (settings && !settings.error) {
+        for (const k in settings) config[k] = settings[k];
+      }
+    } catch (e) {
+      console.error('Settings fetch failed:', e);
+      // Non-fatal: the availability fetch below will also fail and the UI
+      // will render an error state.
+    }
+
+    currentLang = config.defaultLanguage || 'sr';
+    const today = new Date();
+    currentMonth = { year: today.getFullYear(), month: today.getMonth() };
+
+    renderShell();
+    loadAvailability();
+  }
+
+  // ---- Fetch availability from Apps Script ----
+  async function loadAvailability() {
+    renderLoading();
+    try {
+      const url = config.appsScriptUrl + '?action=availability&days=' + (config.daysAhead || 10);
+      const resp = await fetch(url);
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      availability = data;
+    } catch (e) {
+      console.error('Availability fetch failed:', e);
+      // Use empty availability so the UI still renders (all slots appear free for demo)
+      availability = { courts: {}, coaches: {} };
+    }
+    renderCalendar();
+    renderSlots();
+  }
+
+  // ---- Compute bookable slots ----
+  function getWorkingHoursForDate(date) {
+    const dayName = DAY_NAMES_MAP[date.getDay()];
+    const hours = config.workingHours[dayName];
+    if (!hours || hours.length === 0) return [];
+    return hours;
+  }
+
+  function parseHour(timeStr) {
+    return parseInt(timeStr.split(':')[0], 10);
+  }
+
+  function dateKey(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+
+  function isCourtBusy(courtNum, date, hour) {
+    // API returns: courts[num].busy = [{start, end}, ...]
+    const busyList = availability.courts?.[courtNum]?.busy;
+    if (!busyList || busyList.length === 0) return false;
+    const slotStart = new Date(date);
+    slotStart.setHours(hour, 0, 0, 0);
+    const slotEnd = new Date(date);
+    slotEnd.setHours(hour + 1, 0, 0, 0);
+    return busyList.some(b => {
+      const bs = new Date(b.start);
+      const be = new Date(b.end);
+      return bs < slotEnd && be > slotStart;
+    });
+  }
+
+  function isCoachBusy(coachKey, date, hour) {
+    // API returns: coaches[key].busy = [{start, end}, ...]
+    const busyList = availability.coaches?.[coachKey]?.busy;
+    if (!busyList || busyList.length === 0) return false;
+    const slotStart = new Date(date);
+    slotStart.setHours(hour, 0, 0, 0);
+    const slotEnd = new Date(date);
+    slotEnd.setHours(hour + 1, 0, 0, 0);
+    return busyList.some(b => {
+      const bs = new Date(b.start);
+      const be = new Date(b.end);
+      return bs < slotEnd && be > slotStart;
+    });
+  }
+
+  function getFreeCourtsForSlot(date, hour, duration) {
+    // Returns array of court numbers that are free for `duration` consecutive hours
+    const courtNums = Object.keys(config.calendars.courts);
+    return courtNums.filter(cn => {
+      for (let h = hour; h < hour + duration; h++) {
+        if (isCourtBusy(cn, date, h)) return false;
+      }
+      return true;
+    });
+  }
+
+  function getFreeCoachesForSlot(date, hour, duration) {
+    // Returns array of coach keys that are free for `duration` consecutive hours
+    const coachKeys = Object.keys(config.calendars.coaches);
+    return coachKeys.filter(ck => {
+      for (let h = hour; h < hour + duration; h++) {
+        if (isCoachBusy(ck, date, h)) return false;
+      }
+      return true;
+    });
+  }
+
+  function getSlotsForDate(date, duration) {
+    const wh = getWorkingHoursForDate(date);
+    if (wh.length === 0) return [];
+
+    const now = new Date();
+    const slots = [];
+
+    for (const range of wh) {
+      const fromH = parseHour(range.from);
+      const toH = parseHour(range.to);
+
+      for (let h = fromH; h <= toH - duration; h++) {
+        // Skip past hours for today
+        if (dateKey(date) === dateKey(now) && h <= now.getHours()) continue;
+
+        const freeCourts = getFreeCourtsForSlot(date, h, duration);
+        if (freeCourts.length === 0) continue;
+
+        if (currentMode === 'court') {
+          slots.push({ hour: h, courts: freeCourts });
+        } else {
+          // Coach mode: need at least one free coach AND one free court
+          const freeCoaches = getFreeCoachesForSlot(date, h, duration);
+          if (freeCoaches.length === 0) continue;
+          slots.push({ hour: h, courts: freeCourts, coaches: freeCoaches });
+        }
+      }
+    }
+
+    return slots;
+  }
+
+  function hasAnySlots(date) {
+    // Quick check: any 1h slots available?
+    return getSlotsForDate(date, 1).length > 0;
+  }
+
+  function getPriceForHour(hour) {
+    for (const p of config.courtPrices) {
+      const from = parseHour(p.from);
+      const to = parseHour(p.to);
+      if (hour >= from && hour < to) return p;
+    }
+    return config.courtPrices[0];
+  }
+
+  function getTotalPrice(hour, duration, coachKey) {
+    let total = 0;
+    for (let h = hour; h < hour + duration; h++) {
+      const p = getPriceForHour(h);
+      total += p.price;
+    }
+    if (coachKey) {
+      total += (config.coachPrices[coachKey] || 0) * duration;
+    }
+    return total;
+  }
+
+  function formatHour(h) {
+    return String(h).padStart(2, '0') + ':00';
+  }
+
+  function formatDateShort(date) {
+    const weekday = new Intl.DateTimeFormat(locale(), { weekday: 'short' }).format(date);
+    // Capitalize first letter
+    const cap = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+    return `${cap} ${date.getDate()}`;
+  }
+
+  function formatMonthYear(year, month) {
+    const d = new Date(year, month, 1);
+    const name = new Intl.DateTimeFormat(locale(), { month: 'long', year: 'numeric' }).format(d);
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+
+  function getWeekdayHeaders() {
+    // MON TUE WED THU FRI SAT SUN (ISO week start)
+    const headers = [];
+    // Use a known Monday: 2026-01-05
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(2026, 0, 5 + i); // Jan 5, 2026 is Monday
+      const name = new Intl.DateTimeFormat(locale(), { weekday: 'short' }).format(d);
+      headers.push(name.toUpperCase());
+    }
+    return headers;
+  }
+
+  // ---- Render shell ----
+  function renderShell() {
+    const app = document.getElementById('booking-app');
+    app.innerHTML = `
+      <div class="tabs">
+        <button class="tab-btn ${currentMode === 'court' ? 'active' : ''}" data-mode="court">${t('bookCourt')}</button>
+        <button class="tab-btn ${currentMode === 'coach' ? 'active' : ''}" data-mode="coach">${t('bookCoach')}</button>
+      </div>
+      <div id="calendar-pane"></div>
+      <div id="slot-pane"></div>
+    `;
+
+    app.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentMode = btn.dataset.mode;
+        expandedSlot = null;
+        selectedCoach = null;
+        renderShell();
+        renderCalendar();
+        renderSlots();
+      });
+    });
+
+    // Language switcher
+    const langSwitcher = document.getElementById('lang-switcher');
+    if (langSwitcher) {
+      langSwitcher.innerHTML = config.languages.map(lang =>
+        `<button class="lang-btn ${lang === currentLang ? 'active' : ''}" data-lang="${lang}">${lang.toUpperCase()}</button>`
+      ).join('');
+      langSwitcher.querySelectorAll('.lang-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentLang = btn.dataset.lang;
+          renderShell();
+          renderCalendar();
+          renderSlots();
+          // Update hero
+          const tagline = document.querySelector('.tagline');
+          if (tagline) tagline.textContent = t('tagline');
+          // Update tab labels already handled by renderShell
+        });
+      });
+    }
+
+    // Footer from config
+    const footer = document.getElementById('site-footer');
+    if (footer && config.contact) {
+      const c = config.contact;
+      footer.innerHTML = `
+        <svg class="footer-court" width="400" height="200" viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+          <rect x="0" y="0" width="200" height="100" rx="4" fill="#c66c4d"/>
+          <rect x="10" y="5" width="180" height="90" fill="none" stroke="white" stroke-width="1.5"/>
+          <line x1="100" y1="5" x2="100" y2="95" stroke="white" stroke-width="1.5"/>
+          <rect x="40" y="5" width="120" height="90" fill="none" stroke="white" stroke-width="1"/>
+          <line x1="40" y1="50" x2="160" y2="50" stroke="white" stroke-width="1"/>
+        </svg>
+        <div class="footer-content">
+          <div class="footer-name">${config.siteName || 'Book Meridiana'}</div>
+          <div class="footer-info">
+            ${c.address ? c.address + '<br>' : ''}
+            ${c.email ? '<a href="mailto:' + c.email + '">' + c.email + '</a><br>' : ''}
+            ${c.phone ? '<a href="tel:' + c.phone.replace(/\s/g, '') + '">' + c.phone + '</a><br>' : ''}
+            ${c.instagram ? '<a href="https://instagram.com/' + c.instagram.replace('@', '') + '" target="_blank" rel="noopener">' + c.instagram + '</a>' : ''}
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  // ---- Render loading ----
+  function renderLoading() {
+    const pane = document.getElementById('calendar-pane');
+    if (pane) {
+      pane.innerHTML = `<div class="loading-state">
+        <div class="ball-bounce">${tennisBallSVG(40)}</div>
+        <p>${t('loading')}</p>
+      </div>`;
+    }
+  }
+
+  // ---- Render calendar ----
+  function renderCalendar() {
+    if (!availability) return;
+
+    const pane = document.getElementById('calendar-pane');
+    if (!pane) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const maxDate = new Date(today);
+    maxDate.setDate(maxDate.getDate() + (config.daysAhead || 10));
+
+    const year = currentMonth.year;
+    const month = currentMonth.month;
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+
+    // ISO weekday (Mon=0)
+    let startDow = firstDay.getDay() - 1;
+    if (startDow < 0) startDow = 6;
+
+    const headers = getWeekdayHeaders();
+
+    // Can navigate prev?
+    const prevMonth = new Date(year, month, 0);
+    const canPrev = prevMonth >= today;
+    // Can navigate next?
+    const nextMonthFirst = new Date(year, month + 1, 1);
+    const canNext = nextMonthFirst <= maxDate;
+
+    let html = `
+      <div class="calendar-header">
+        <h2>${formatMonthYear(year, month)}</h2>
+        <div class="calendar-nav">
+          <button id="cal-prev" ${canPrev ? '' : 'disabled'}>&#8249;</button>
+          <button id="cal-next" ${canNext ? '' : 'disabled'}>&#8250;</button>
+        </div>
+      </div>
+      <div class="weekday-row">
+        ${headers.map(h => `<div class="weekday-cell">${h}</div>`).join('')}
+      </div>
+      <div class="calendar-grid">
+    `;
+
+    // Find the first day to render (today or 1st of month, whichever is later for current month)
+    const firstVisible = (year === today.getFullYear() && month === today.getMonth())
+      ? today.getDate()
+      : 1;
+
+    // Compute weekday offset for the first visible day
+    const firstVisibleDate = new Date(year, month, firstVisible);
+    let firstVisibleDow = firstVisibleDate.getDay() - 1; // Mon=0
+    if (firstVisibleDow < 0) firstVisibleDow = 6;
+
+    // Empty cells before first visible day
+    for (let i = 0; i < firstVisibleDow; i++) {
+      html += `<div class="day-cell empty"></div>`;
+    }
+
+    // Last day to render: min of end-of-month and maxDate
+    const lastVisible = Math.min(lastDay.getDate(),
+      (year === maxDate.getFullYear() && month === maxDate.getMonth())
+        ? maxDate.getDate() - 1
+        : lastDay.getDate());
+
+    for (let d = firstVisible; d <= lastVisible; d++) {
+      const date = new Date(year, month, d);
+      date.setHours(0, 0, 0, 0);
+      const isToday = date.getTime() === today.getTime();
+      const isSelected = selectedDate && dateKey(date) === dateKey(selectedDate);
+
+      let classes = 'day-cell';
+      if (isToday) classes += ' today';
+
+      const avail = hasAnySlots(date);
+      if (avail) {
+        classes += ' available';
+        if (isSelected) classes += ' selected';
+        html += `<div class="${classes}" data-date="${dateKey(date)}">${d}</div>`;
+      } else {
+        classes += ' unavailable';
+        html += `<div class="${classes}">${d}</div>`;
+      }
+    }
+
+    html += `</div>`;
+    pane.innerHTML = html;
+
+    // Event listeners
+    pane.querySelectorAll('.day-cell.available').forEach(cell => {
+      cell.addEventListener('click', () => {
+        const parts = cell.dataset.date.split('-');
+        selectedDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        expandedSlot = null;
+        selectedCoach = null;
+        renderCalendar();
+        renderSlots();
+      });
+    });
+
+    document.getElementById('cal-prev')?.addEventListener('click', () => {
+      currentMonth.month--;
+      if (currentMonth.month < 0) {
+        currentMonth.month = 11;
+        currentMonth.year--;
+      }
+      renderCalendar();
+    });
+
+    document.getElementById('cal-next')?.addEventListener('click', () => {
+      currentMonth.month++;
+      if (currentMonth.month > 11) {
+        currentMonth.month = 0;
+        currentMonth.year++;
+      }
+      renderCalendar();
+    });
+  }
+
+  // ---- Render slots ----
+  function renderSlots() {
+    const pane = document.getElementById('slot-pane');
+    if (!pane) return;
+
+    if (!selectedDate) {
+      pane.innerHTML = `<div class="empty-state">
+        ${tennisBallSVG(32)}
+        <p>${t('selectDay')}</p>
+      </div>`;
+      return;
+    }
+
+    const slots = getSlotsForDate(selectedDate, selectedDuration);
+
+    let html = `
+      <div class="slot-section">
+        <div class="slot-header">
+          <h3>${formatDateShort(selectedDate)}</h3>
+          <div class="duration-picker">
+            ${[1, 2, 3].map(d =>
+              `<button class="duration-btn ${d === selectedDuration ? 'active' : ''}" data-dur="${d}">${d}h</button>`
+            ).join('')}
+          </div>
+        </div>
+    `;
+
+    if (slots.length === 0) {
+      html += `<div class="empty-state">
+        ${tennisBallSVG(28)}
+        <p>${t('noSlots')}</p>
+      </div>`;
+    } else {
+      html += `<div class="slot-list">`;
+      for (const slot of slots) {
+        const timeStr = formatHour(slot.hour);
+        const isExpanded = expandedSlot && expandedSlot.hour === slot.hour;
+
+        if (currentMode === 'court') {
+          const price = getPriceForHour(slot.hour);
+          const courtLabel = slot.courts.length === 1
+            ? `${t('court')} ${slot.courts[0]}`
+            : `${t('courts')} ${slot.courts.join(', ')}`;
+          html += `<button class="slot-btn ${isExpanded ? 'expanded' : ''}" data-hour="${slot.hour}">
+            <span class="slot-time">${timeStr}</span>
+            <span class="slot-info"><span class="slot-price">${price.price} ${price.currency}</span><span class="slot-courts">· ${courtLabel}</span></span>
+          </button>`;
+
+          if (isExpanded && slot.courts.length > 1) {
+            html += `<div class="picker">
+              <span class="picker-label">${t('chooseCourt')}</span>
+              ${slot.courts.map(c => `<button class="picker-pill" data-court="${c}">${t('court')} ${c}</button>`).join('')}
+            </div>`;
+          }
+        } else {
+          // Coach mode
+          const coachNames = slot.coaches.map(ck => config.calendars.coaches[ck].name);
+          const courtLabel = slot.courts.length === 1
+            ? `${t('court')} ${slot.courts[0]}`
+            : `${t('courts')} ${slot.courts.join(', ')}`;
+          let coachLabel;
+          if (coachNames.length === 1) {
+            coachLabel = coachNames[0];
+          } else {
+            coachLabel = coachNames.join(` ${t('or')} `);
+          }
+
+          html += `<button class="slot-btn ${isExpanded ? 'expanded' : ''}" data-hour="${slot.hour}">
+            <span class="slot-time">${timeStr}</span>
+            <span class="slot-info"><span class="slot-price">${coachLabel}</span><span class="slot-courts">· ${courtLabel}</span></span>
+          </button>`;
+
+          if (isExpanded) {
+            // If multiple coaches, show coach picker first
+            if (slot.coaches.length > 1 && !selectedCoach) {
+              html += `<div class="picker">
+                <span class="picker-label">${t('chooseCoach')}</span>
+                ${slot.coaches.map(ck => {
+                  const name = config.calendars.coaches[ck].name;
+                  const price = config.coachPrices[ck];
+                  return `<button class="picker-pill" data-coach="${ck}">${name} — ${price} ${config.coachPrices.currency}</button>`;
+                }).join('')}
+              </div>`;
+            } else {
+              // Coach selected (or only one), show court picker if needed
+              const effectiveCoach = selectedCoach || slot.coaches[0];
+              if (slot.courts.length > 1) {
+                html += `<div class="picker">
+                  <span class="picker-label">${t('chooseCourt')}</span>
+                  ${slot.courts.map(c => `<button class="picker-pill" data-court="${c}" data-coach-sel="${effectiveCoach}">${t('court')} ${c}</button>`).join('')}
+                </div>`;
+              }
+            }
+          }
+        }
+      }
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+    pane.innerHTML = html;
+
+    // Duration picker
+    pane.querySelectorAll('.duration-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedDuration = parseInt(btn.dataset.dur);
+        expandedSlot = null;
+        selectedCoach = null;
+        renderSlots();
+      });
+    });
+
+    // Slot click
+    pane.querySelectorAll('.slot-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const hour = parseInt(btn.dataset.hour);
+        const slot = slots.find(s => s.hour === hour);
+
+        if (expandedSlot && expandedSlot.hour === hour) {
+          // Already expanded — if only 1 court (and in court mode or coach already picked), go to form
+          if (currentMode === 'court' && slot.courts.length === 1) {
+            openBookingForm(hour, slot.courts[0], null);
+            return;
+          }
+          if (currentMode === 'coach') {
+            const coach = selectedCoach || (slot.coaches.length === 1 ? slot.coaches[0] : null);
+            if (coach && slot.courts.length === 1) {
+              openBookingForm(hour, slot.courts[0], coach);
+              return;
+            }
+          }
+          // Toggle off
+          expandedSlot = null;
+          selectedCoach = null;
+          renderSlots();
+          return;
+        }
+
+        // Expand or go straight to form
+        if (currentMode === 'court') {
+          if (slot.courts.length === 1) {
+            openBookingForm(hour, slot.courts[0], null);
+          } else {
+            expandedSlot = { hour };
+            selectedCoach = null;
+            renderSlots();
+          }
+        } else {
+          if (slot.coaches.length === 1 && slot.courts.length === 1) {
+            openBookingForm(hour, slot.courts[0], slot.coaches[0]);
+          } else {
+            expandedSlot = { hour };
+            selectedCoach = null;
+            renderSlots();
+          }
+        }
+      });
+    });
+
+    // Coach picker
+    pane.querySelectorAll('.picker-pill[data-coach]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectedCoach = btn.dataset.coach;
+        const hour = expandedSlot.hour;
+        const slot = slots.find(s => s.hour === hour);
+        // If only one court, go straight to form
+        if (slot.courts.length === 1) {
+          openBookingForm(hour, slot.courts[0], selectedCoach);
+        } else {
+          renderSlots();
+        }
+      });
+    });
+
+    // Court picker
+    pane.querySelectorAll('.picker-pill[data-court]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const court = btn.dataset.court;
+        const hour = expandedSlot.hour;
+        const coach = btn.dataset.coachSel || null;
+        openBookingForm(hour, court, coach);
+      });
+    });
+  }
+
+  // ---- Booking form modal ----
+  function openBookingForm(hour, courtNum, coachKey) {
+    const timeStr = formatHour(hour);
+    const endTimeStr = formatHour(hour + selectedDuration);
+    const dateStr = formatDateShort(selectedDate);
+    const total = getTotalPrice(hour, selectedDuration, coachKey);
+    const currency = config.courtPrices[0].currency;
+
+    // Court price for the duration
+    let courtTotal = 0;
+    for (let h = hour; h < hour + selectedDuration; h++) {
+      courtTotal += getPriceForHour(h).price;
+    }
+
+    let summaryParts = [`${dateStr}, ${timeStr} – ${endTimeStr}`, `${t('court')} ${courtNum} — ${courtTotal} ${currency}`];
+    if (coachKey) {
+      const coachPrice = (config.coachPrices[coachKey] || 0) * selectedDuration;
+      summaryParts.push(`${t('coach')}: ${config.calendars.coaches[coachKey].name} — ${coachPrice} ${currency}`);
+    }
+    summaryParts.push(`${t('total')}: ${total} ${currency}`);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'booking-modal-overlay';
+    overlay.innerHTML = `
+      <div class="booking-modal">
+        <button class="modal-close" id="modal-close-btn" aria-label="Close">&times;</button>
+        <h4>${t('bookingTitle')}</h4>
+        <div class="booking-summary">
+          ${summaryParts.map(s => `<div><strong>${s}</strong></div>`).join('')}
+        </div>
+        <form id="booking-form">
+          <div class="form-group">
+            <label>${t('name')} *</label>
+            <input type="text" name="name" required placeholder="${t('namePlaceholder')}">
+          </div>
+          <div class="form-group">
+            <label>${t('email')} *</label>
+            <input type="email" name="email" required placeholder="${t('emailPlaceholder')}">
+          </div>
+          <div class="form-group">
+            <label>${t('phone')}</label>
+            <input type="tel" name="phone" placeholder="${t('phonePlaceholder')}">
+          </div>
+          <div class="form-group">
+            <label>${t('language')}</label>
+            <select name="language">
+              ${config.languages.map(l => `<option value="${l}" ${l === currentLang ? 'selected' : ''}>${l.toUpperCase()}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="cancel-booking">${t('cancel')}</button>
+            <button type="submit" class="btn-primary" id="submit-booking">${t('book')}</button>
+          </div>
+        </form>
+        <div id="form-status" style="display:none;"></div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Close on overlay click
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+
+    document.getElementById('cancel-booking').addEventListener('click', () => overlay.remove());
+    document.getElementById('modal-close-btn').addEventListener('click', () => overlay.remove());
+
+    document.getElementById('booking-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const submitBtn = document.getElementById('submit-booking');
+
+      // Client-side validation: required name and plausible email.
+      const nameVal = form.name.value.trim();
+      const emailVal = form.email.value.trim();
+      const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal);
+      if (!nameVal || !emailOk) {
+        form.reportValidity();
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = '…';
+
+      const isoDate = dateKey(selectedDate);
+      const payload = {
+        action: 'book',
+        date: isoDate,
+        startHour: hour,
+        durationHours: selectedDuration,
+        courtId: courtNum,
+        coachId: coachKey || '',
+        name: form.name.value.trim(),
+        email: form.email.value.trim(),
+        phone: form.phone.value.trim(),
+        language: form.language.value,
+      };
+
+      try {
+        const resp = await fetch(config.appsScriptUrl, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          redirect: 'follow',
+        });
+        const text = await resp.text();
+        let data;
+        try { data = JSON.parse(text); } catch { data = { error: text }; }
+
+        if (data.status === 'pending') {
+          form.style.display = 'none';
+          const status = document.getElementById('form-status');
+          status.style.display = 'block';
+          status.innerHTML = `
+            <div class="success-state">
+              ${tennisBallSVG(40)}
+              <h4></h4>
+              <p></p>
+            </div>
+          `;
+          status.querySelector('h4').textContent = t('checkEmail');
+          status.querySelector('p').textContent = t('checkEmailDesc');
+        } else {
+          // Prefer our localized strings; only fall back to server error if present.
+          const msg = data.error === 'CONFLICT'
+            ? t('slotTaken')
+            : (typeof data.error === 'string' && data.error ? data.error : t('bookingError'));
+          form.style.display = 'none';
+          const status = document.getElementById('form-status');
+          status.style.display = 'block';
+          status.innerHTML = `
+            <div class="error-state">
+              ${tennisBallSVG(28)}
+              <p></p>
+            </div>
+          `;
+          // textContent — never render server strings as HTML.
+          status.querySelector('p').textContent = msg;
+        }
+      } catch (err) {
+        console.error('Booking error:', err);
+        submitBtn.disabled = false;
+        submitBtn.textContent = t('book');
+        document.getElementById('form-status').style.display = 'block';
+        document.getElementById('form-status').innerHTML = `
+          <div class="error-state"><p>${t('bookingError')}</p></div>
+        `;
+      }
+    });
+  }
+
+  // ---- Boot ----
+  document.addEventListener('DOMContentLoaded', init);
+})();

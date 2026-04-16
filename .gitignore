@@ -1,0 +1,11 @@
+.DS_Store
+.claude/
+CLAUDE.md
+*.log
+.vscode/
+.idea/
+node_modules/
+
+# Admin page lives in the Apps Script project, not in the public repo.
+# Keep a local working copy but never commit it.
+admin.html
