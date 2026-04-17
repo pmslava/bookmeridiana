@@ -832,6 +832,9 @@ function handleConfirm(token) {
 
   GmailApp.sendEmail(pending.email, subject, emailBody);
 
+  // Notify admin(s) — and optionally the specific coach.
+  notifyAdmins(cfg, pending, 'created');
+
   return htmlResponse(
     tr(lang, 'htmlConfirmedTitle'),
     tr(lang, 'htmlConfirmedBody', {
@@ -904,6 +907,9 @@ function handleCancel(cancelToken) {
   emailBody += '— ' + cfg.siteName;
 
   GmailApp.sendEmail(booking.email, subject, emailBody);
+
+  // Notify admin(s) — and optionally the specific coach.
+  notifyAdmins(cfg, booking, 'cancelled');
 
   // Clean up properties
   props.deleteProperty('confirmed_' + cancelToken);
@@ -1147,6 +1153,63 @@ function formatIcsDate(date) {
   const mm = String(date.getMinutes()).padStart(2, '0');
   const ss = String(date.getSeconds()).padStart(2, '0');
   return y + m + d + 'T' + hh + mm + ss;
+}
+
+// Send booking notification to admin(s). kind is 'created' or 'cancelled'.
+// Recipients come from settings.adminNotifications.emails, plus — when
+// coachGetsOwnBookings is true and the booking is a coach booking — the
+// specific coach's email. Errors are swallowed so a notify failure never
+// breaks the client-facing booking/cancel flow.
+function notifyAdmins(cfg, booking, kind) {
+  try {
+    const notif = (cfg && cfg.adminNotifications) || {};
+    const recipients = [];
+    if (Array.isArray(notif.emails)) {
+      for (const e of notif.emails) {
+        if (e && typeof e === 'string') recipients.push(e);
+      }
+    }
+    if (notif.coachGetsOwnBookings && booking.coachId
+        && cfg.coaches && cfg.coaches[booking.coachId]
+        && cfg.coaches[booking.coachId].email) {
+      recipients.push(cfg.coaches[booking.coachId].email);
+    }
+
+    // Dedupe (case-insensitive).
+    const seen = {};
+    const unique = [];
+    for (const e of recipients) {
+      const key = e.toLowerCase();
+      if (!seen[key]) { seen[key] = true; unique.push(e); }
+    }
+    if (unique.length === 0) return;
+
+    const timeStr = padHour(booking.startHour) + ':00';
+    const endTimeStr = padHour(booking.startHour + booking.durationHours) + ':00';
+    const coachLabel = booking.coachId && cfg.coaches && cfg.coaches[booking.coachId]
+      ? cfg.coaches[booking.coachId].name
+      : null;
+    const courtLabel = 'Court ' + booking.courtId;
+    const verb = kind === 'cancelled' ? 'CANCELLED' : 'NEW BOOKING';
+
+    const subject = '[' + cfg.siteName + '] ' + verb + ': '
+      + booking.date + ' ' + timeStr + ' — ' + courtLabel
+      + (coachLabel ? ' / ' + coachLabel : '');
+
+    let body = verb + '\n\n';
+    body += 'Date: ' + booking.date + '\n';
+    body += 'Time: ' + timeStr + ' – ' + endTimeStr + '\n';
+    body += courtLabel + '\n';
+    if (coachLabel) body += 'Coach: ' + coachLabel + '\n';
+    body += '\nClient: ' + booking.name + '\n';
+    body += 'Email: ' + booking.email + '\n';
+    if (booking.phone) body += 'Phone: ' + booking.phone + '\n';
+    body += '\n— ' + cfg.siteName;
+
+    GmailApp.sendEmail(unique.join(','), subject, body);
+  } catch (err) {
+    Logger.log('notifyAdmins error: ' + err.message);
+  }
 }
 
 function jsonResponse(data, statusCode) {
