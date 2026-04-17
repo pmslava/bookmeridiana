@@ -1,5 +1,5 @@
 // ============================================================
-// BookMeridiana — Google Apps Script Backend
+// TennisKosmos — Google Apps Script Backend
 // ============================================================
 // This script is intended to be deployed TWICE as a Web App:
 //
@@ -47,7 +47,7 @@ function setAdminEmail(email) {
 
 // Cosmetic fallback used ONLY by htmlResponse if Script Properties
 // haven't been seeded yet. Never referenced by the booking logic.
-const FALLBACK_SITE_NAME = 'Book Meridiana';
+const FALLBACK_SITE_NAME = 'Tennis Kosmos';
 
 // ============================================================
 // Settings — Script Properties is the single source of truth.
@@ -96,7 +96,7 @@ function publicSettings(full) {
 
 // Seeds settings_json with a neutral template. Calendar IDs, admin
 // emails, coach emails, and fromEmail are LEFT BLANK on purpose so no
-// bookmeridiana-specific data lives in this repo. Fill them from the
+// tenniskosmos-specific data lives in this repo. Fill them from the
 // admin page on first boot, or paste them directly into the
 // settings_json property via Project Settings -> Script Properties.
 function setupInitialSettings() {
@@ -106,7 +106,7 @@ function setupInitialSettings() {
     return;
   }
   const seed = {
-    siteName: 'Book Meridiana',
+    siteName: 'Tennis Kosmos',
     timezone: 'Europe/Belgrade',
     siteUrl: 'https://pmslava.github.io/bookmeridiana/',
     daysAhead: 10,
@@ -351,7 +351,7 @@ function doGet(e) {
     if (params.admin === '1') {
       requireAdmin();
       return HtmlService.createHtmlOutputFromFile('admin')
-        .setTitle('Admin — Book Meridiana')
+        .setTitle('Admin — Tennis Kosmos')
         .addMetaTag('viewport', 'width=device-width, initial-scale=1');
     }
 
@@ -1086,7 +1086,7 @@ function generateIcs(booking, startDate, endDate, cancelToken) {
   const courtLabel = 'Court ' + booking.courtId;
   const coachLabel = booking.coachId ? cfg.coaches[booking.coachId].name : null;
 
-  const uid = Utilities.getUuid() + '@bookmeridiana';
+  const uid = Utilities.getUuid() + '@tenniskosmos';
   const now = formatIcsDate(new Date());
   const dtStart = formatIcsDate(startDate);
   const dtEnd = formatIcsDate(endDate);
@@ -1100,7 +1100,7 @@ function generateIcs(booking, startDate, endDate, cancelToken) {
   let ics = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//BookMeridiana//Tennis//EN',
+    'PRODID:-//TennisKosmos//Tennis//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     'BEGIN:VEVENT',

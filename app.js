@@ -1,5 +1,5 @@
 /* ============================================
-   Meridiana Tennis — Booking App
+   Tennis Kosmos — Booking App
    Vanilla JS, no frameworks
    ============================================ */
 
@@ -406,7 +406,7 @@
           <line x1="40" y1="50" x2="160" y2="50" stroke="white" stroke-width="1"/>
         </svg>
         <div class="footer-content">
-          <div class="footer-name">${config.siteName || 'Book Meridiana'}</div>
+          <div class="footer-name">${config.siteName || 'Tennis Kosmos'}</div>
           <div class="footer-info">
             ${c.address ? c.address + '<br>' : ''}
             ${c.email ? '<a href="mailto:' + c.email + '">' + c.email + '</a><br>' : ''}

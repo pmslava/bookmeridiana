@@ -1,6 +1,6 @@
-# Meridiana Tennis — Booking Site
+# Tennis Kosmos — Booking Site
 
-Static tennis-court booking site for Meridiana Tennis in Novi Sad, hosted on GitHub Pages, backed by Google Calendar and Google Apps Script.
+Static tennis-court booking site for Tennis Kosmos in Novi Sad, hosted on GitHub Pages, backed by Google Calendar and Google Apps Script.
 
 ## Setup
 
