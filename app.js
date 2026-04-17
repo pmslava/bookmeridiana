@@ -112,7 +112,6 @@
   let currentLang = 'sr';
   let currentMode = 'court'; // 'court' or 'coach'
   let selectedDate = null;
-  let currentMonth = null; // { year, month } displayed
   let selectedDuration = 1;
   let expandedSlot = null; // { hour, step } — which slot has picker open
   let selectedCoach = null; // coach key during selection
@@ -169,8 +168,6 @@
     }
 
     currentLang = config.defaultLanguage || 'sr';
-    const today = new Date();
-    currentMonth = { year: today.getFullYear(), month: today.getMonth() };
 
     renderShell();
     loadAvailability();
@@ -441,34 +438,32 @@
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const maxDate = new Date(today);
-    maxDate.setDate(maxDate.getDate() + (config.daysAhead || 10));
-
-    const year = currentMonth.year;
-    const month = currentMonth.month;
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-
-    // ISO weekday (Mon=0)
-    let startDow = firstDay.getDay() - 1;
-    if (startDow < 0) startDow = 6;
+    const daysAhead = config.daysAhead || 10;
+    const lastDate = new Date(today);
+    lastDate.setDate(lastDate.getDate() + daysAhead - 1);
 
     const headers = getWeekdayHeaders();
 
-    // Can navigate prev?
-    const prevMonth = new Date(year, month, 0);
-    const canPrev = prevMonth >= today;
-    // Can navigate next?
-    const nextMonthFirst = new Date(year, month + 1, 1);
-    const canNext = nextMonthFirst <= maxDate;
+    // Header label: single month when the window fits inside one month,
+    // otherwise show both month names so users understand the day tiles
+    // cross a month boundary.
+    const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+    let headerLabel;
+    if (today.getFullYear() === lastDate.getFullYear() && today.getMonth() === lastDate.getMonth()) {
+      headerLabel = formatMonthYear(today.getFullYear(), today.getMonth());
+    } else {
+      const firstMonthName = cap(new Intl.DateTimeFormat(locale(), { month: 'long' }).format(today));
+      const lastMonthName = cap(new Intl.DateTimeFormat(locale(), { month: 'long' }).format(lastDate));
+      if (today.getFullYear() === lastDate.getFullYear()) {
+        headerLabel = `${firstMonthName} – ${lastMonthName} ${lastDate.getFullYear()}`;
+      } else {
+        headerLabel = `${firstMonthName} ${today.getFullYear()} – ${lastMonthName} ${lastDate.getFullYear()}`;
+      }
+    }
 
     let html = `
       <div class="calendar-header">
-        <h2>${formatMonthYear(year, month)}</h2>
-        <div class="calendar-nav">
-          <button id="cal-prev" ${canPrev ? '' : 'disabled'}>&#8249;</button>
-          <button id="cal-next" ${canNext ? '' : 'disabled'}>&#8250;</button>
-        </div>
+        <h2>${headerLabel}</h2>
       </div>
       <div class="weekday-row">
         ${headers.map(h => `<div class="weekday-cell">${h}</div>`).join('')}
@@ -476,51 +471,39 @@
       <div class="calendar-grid">
     `;
 
-    // Find the first day to render (today or 1st of month, whichever is later for current month)
-    const firstVisible = (year === today.getFullYear() && month === today.getMonth())
-      ? today.getDate()
-      : 1;
-
-    // Compute weekday offset for the first visible day
-    const firstVisibleDate = new Date(year, month, firstVisible);
-    let firstVisibleDow = firstVisibleDate.getDay() - 1; // Mon=0
-    if (firstVisibleDow < 0) firstVisibleDow = 6;
-
-    // Empty cells before first visible day
-    for (let i = 0; i < firstVisibleDow; i++) {
+    // Align the first day to its weekday column (Mon=0..Sun=6).
+    let firstDow = today.getDay() - 1;
+    if (firstDow < 0) firstDow = 6;
+    for (let i = 0; i < firstDow; i++) {
       html += `<div class="day-cell empty"></div>`;
     }
 
-    // Last day to render: min of end-of-month and maxDate
-    const lastVisible = Math.min(lastDay.getDate(),
-      (year === maxDate.getFullYear() && month === maxDate.getMonth())
-        ? maxDate.getDate() - 1
-        : lastDay.getDate());
-
-    for (let d = firstVisible; d <= lastVisible; d++) {
-      const date = new Date(year, month, d);
-      date.setHours(0, 0, 0, 0);
-      const isToday = date.getTime() === today.getTime();
-      const isSelected = selectedDate && dateKey(date) === dateKey(selectedDate);
+    // Emit one tile per bookable day, continuously across month boundaries.
+    const cursor = new Date(today);
+    while (cursor <= lastDate) {
+      const isToday = cursor.getTime() === today.getTime();
+      const isSelected = selectedDate && dateKey(cursor) === dateKey(selectedDate);
+      const d = cursor.getDate();
 
       let classes = 'day-cell';
       if (isToday) classes += ' today';
 
-      const avail = hasAnySlots(date);
+      const avail = hasAnySlots(cursor);
       if (avail) {
         classes += ' available';
         if (isSelected) classes += ' selected';
-        html += `<div class="${classes}" data-date="${dateKey(date)}">${d}</div>`;
+        html += `<div class="${classes}" data-date="${dateKey(cursor)}">${d}</div>`;
       } else {
         classes += ' unavailable';
         html += `<div class="${classes}">${d}</div>`;
       }
+
+      cursor.setDate(cursor.getDate() + 1);
     }
 
     html += `</div>`;
     pane.innerHTML = html;
 
-    // Event listeners
     pane.querySelectorAll('.day-cell.available').forEach(cell => {
       cell.addEventListener('click', () => {
         const parts = cell.dataset.date.split('-');
@@ -530,24 +513,6 @@
         renderCalendar();
         renderSlots();
       });
-    });
-
-    document.getElementById('cal-prev')?.addEventListener('click', () => {
-      currentMonth.month--;
-      if (currentMonth.month < 0) {
-        currentMonth.month = 11;
-        currentMonth.year--;
-      }
-      renderCalendar();
-    });
-
-    document.getElementById('cal-next')?.addEventListener('click', () => {
-      currentMonth.month++;
-      if (currentMonth.month > 11) {
-        currentMonth.month = 0;
-        currentMonth.year++;
-      }
-      renderCalendar();
     });
   }
 
