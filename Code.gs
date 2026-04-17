@@ -1228,6 +1228,7 @@ function htmlResponse(title, body) {
 
   const html = '<!DOCTYPE html><html><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<base target="_top">'
     + '<title>' + title + ' — ' + siteName + '</title>'
     + '<style>'
     + 'body{font-family:system-ui,sans-serif;max-width:480px;margin:60px auto;padding:0 20px;'
