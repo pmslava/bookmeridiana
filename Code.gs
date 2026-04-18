@@ -187,6 +187,37 @@ function migrateRemoveCoaches() {
   Logger.log('Migration complete. Old settings backed up to settings_json_backup.');
 }
 
+// DEBUG: run this directly from the editor (function dropdown → debugBookingFlow → Run)
+// to exercise doPost's booking path with fake POST data. This bypasses
+// the Web App deployment layer entirely, so any logging or thrown
+// exception is guaranteed to appear in the editor's Execution log.
+function debugBookingFlow() {
+  Logger.log('=== debugBookingFlow starting ===');
+  const fakeEvent = {
+    postData: {
+      contents: JSON.stringify({
+        action: 'book',
+        date: '2026-04-20',
+        startHour: 10,
+        durationHours: 1,
+        courtId: '1',
+        name: 'Debug Test',
+        email: 'debug-' + Date.now() + '@example.com',
+        phone: '',
+        language: 'sr',
+      }),
+    },
+  };
+  const response = doPost(fakeEvent);
+  // ContentService responses expose getContent() to read the body back.
+  try {
+    Logger.log('doPost returned body: ' + response.getContent());
+  } catch (e) {
+    Logger.log('doPost returned object (no getContent): ' + JSON.stringify(response));
+  }
+  Logger.log('=== debugBookingFlow finished ===');
+}
+
 function validateSettings(s) {
   if (!s || typeof s !== 'object') throw new Error('Settings must be an object.');
   const required = ['siteName','timezone','daysAhead','slotLengthMinutes','workingHours',
