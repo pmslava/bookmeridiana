@@ -894,21 +894,29 @@
         try { data = JSON.parse(text); } catch { data = { error: text }; }
 
         if (data.status === 'pending') {
-          form.style.display = 'none';
-          const status = document.getElementById('request-status');
-          status.style.display = 'block';
-          status.innerHTML = `
-            <div class="success-state">
-              ${tennisBallSVG(40)}
-              <h4></h4>
-              <p></p>
+          // Replace the entire pane so the form title/intro/form all disappear
+          // — the success card is self-contained. Uses the same X-in-corner
+          // close affordance as the court booking modal for consistency.
+          pane.innerHTML = `
+            <div class="request-section">
+              <button class="modal-close" id="training-close-btn" aria-label="Close">&times;</button>
+              <div class="success-state">
+                ${tennisBallSVG(40)}
+                <h4></h4>
+                <p></p>
+              </div>
             </div>
           `;
-          status.querySelector('h4').textContent = t('checkEmail');
-          status.querySelector('p').textContent = t('checkEmailTraining');
+          pane.querySelector('h4').textContent = t('checkEmail');
+          pane.querySelector('p').textContent = t('checkEmailTraining');
+          pane.querySelector('#training-close-btn').addEventListener('click', () => {
+            renderTrainingForm();
+          });
         } else {
           const msg = typeof data.error === 'string' && data.error ? data.error : t('bookingError');
-          form.style.display = 'none';
+          // Keep the form visible so the user can correct and retry.
+          submitBtn.disabled = false;
+          submitBtn.textContent = t('submit');
           const status = document.getElementById('request-status');
           status.style.display = 'block';
           status.innerHTML = `
@@ -923,10 +931,13 @@
         console.error('Request error:', err);
         submitBtn.disabled = false;
         submitBtn.textContent = t('submit');
-        document.getElementById('request-status').style.display = 'block';
-        document.getElementById('request-status').innerHTML = `
-          <div class="error-state"><p>${t('bookingError')}</p></div>
-        `;
+        const status = document.getElementById('request-status');
+        if (status) {
+          status.style.display = 'block';
+          status.innerHTML = `
+            <div class="error-state"><p>${t('bookingError')}</p></div>
+          `;
+        }
       }
     });
   }

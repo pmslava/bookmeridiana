@@ -803,6 +803,7 @@ body {
 
 /* ---- Training request form ---- */
 .request-section {
+  position: relative;
   background: var(--bg-card, var(--bg-tile));
   border: 1px solid var(--border);
   border-radius: var(--radius);
