@@ -427,7 +427,8 @@
           <div class="footer-info">
             ${c.address ? c.address + '<br>' : ''}
             ${c.email ? '<a href="mailto:' + c.email + '">' + c.email + '</a><br>' : ''}
-            ${c.phone ? '<a href="tel:' + c.phone.replace(/\s/g, '') + '">' + c.phone + '</a><br>' : ''}
+            ${c.phone ? 'Ratko: <a href="tel:' + c.phone.replace(/\s/g, '') + '">' + c.phone + '</a><br>' : ''}
+            ${c.phone2 ? 'Ivan: <a href="tel:' + c.phone2.replace(/\s/g, '') + '">' + c.phone2 + '</a><br>' : ''}
             ${c.instagram ? '<a href="https://instagram.com/' + c.instagram.replace('@', '') + '" target="_blank" rel="noopener">' + c.instagram + '</a>' : ''}
           </div>
         </div>
