@@ -838,7 +838,7 @@ function handleConfirm(token) {
   const timeStr = padHour(pending.startHour) + ':00';
   const endTimeStr = padHour(pending.startHour + pending.durationHours) + ':00';
   const courtLabel = 'Court ' + pending.courtId;
-  const eventTitle = courtLabel + ' — ' + pending.name;
+  const eventTitle = pending.name + ' — ' + courtLabel;
 
   const eventDescription = [
     'Booked by: ' + pending.name,
