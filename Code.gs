@@ -452,13 +452,13 @@ function doGet(e) {
 // ============================================================
 
 function doPost(e) {
-  console.log('[doPost] entered. raw body: ' + (e && e.postData && e.postData.contents ? e.postData.contents : '<missing>'));
+  Logger.log('[doPost] entered. raw body: ' + (e && e.postData && e.postData.contents ? e.postData.contents : '<missing>'));
   try {
     const body = JSON.parse(e.postData.contents);
-    console.log('[doPost] parsed body action=' + body.action + ' courtId=' + body.courtId + ' date=' + body.date + ' startHour=' + body.startHour + ' duration=' + body.durationHours);
+    Logger.log('[doPost] parsed body action=' + body.action + ' courtId=' + body.courtId + ' date=' + body.date + ' startHour=' + body.startHour + ' duration=' + body.durationHours);
 
     if (body.action === 'saveSettings') {
-      console.log('[doPost] -> saveSettings branch');
+      Logger.log('[doPost] -> saveSettings branch');
       requireAdmin();
       validateSettings(body.settings);
       saveSettingsToStore(body.settings);
@@ -466,14 +466,14 @@ function doPost(e) {
     }
 
     if (body.action === 'requestTraining') {
-      console.log('[doPost] -> requestTraining branch');
+      Logger.log('[doPost] -> requestTraining branch');
       return handleTrainingRequest(body);
     }
 
-    console.log('[doPost] -> handleBookingRequest branch');
+    Logger.log('[doPost] -> handleBookingRequest branch');
     return handleBookingRequest(body);
   } catch (err) {
-    console.log('[doPost] CAUGHT: ' + err.message + '\n' + (err.stack || ''));
+    Logger.log('[doPost] CAUGHT: ' + err.message + '\n' + (err.stack || ''));
     if (err.message === 'Unauthorized') {
       return jsonResponse({ error: 'Unauthorized.' }, 403);
     }
@@ -591,41 +591,41 @@ function handleAvailability(params) {
 // ============================================================
 
 function handleBookingRequest(body) {
-  console.log('[handleBookingRequest] enter. body keys=' + Object.keys(body || {}).join(','));
+  Logger.log('[handleBookingRequest] enter. body keys=' + Object.keys(body || {}).join(','));
   const cfg = getSettings();
-  console.log('[handleBookingRequest] cfg.courts keys=' + Object.keys(cfg.courts || {}).join(',') + ' ; cfg.courts[' + body.courtId + ']=' + cfg.courts[body.courtId]);
+  Logger.log('[handleBookingRequest] cfg.courts keys=' + Object.keys(cfg.courts || {}).join(',') + ' ; cfg.courts[' + body.courtId + ']=' + cfg.courts[body.courtId]);
   const GENERIC = 'Invalid booking request.';
 
   // Validate required fields (without echoing field names back to the client)
   const required = ['date', 'startHour', 'durationHours', 'courtId', 'name', 'email'];
   for (const field of required) {
     if (body[field] === undefined || body[field] === null || body[field] === '') {
-      console.log('[guard] missing field: ' + field);
+      Logger.log('[guard] missing field: ' + field);
       return jsonResponse({ error: GENERIC }, 400);
     }
   }
 
   // Email format
   if (!isValidEmail(String(body.email).trim())) {
-    console.log('[guard] email invalid: ' + body.email);
+    Logger.log('[guard] email invalid: ' + body.email);
     return jsonResponse({ error: GENERIC }, 400);
   }
 
   // Name length sanity
   const name = String(body.name).trim();
   if (name.length === 0 || name.length > 120) {
-    console.log('[guard] name length bad: ' + name.length);
+    Logger.log('[guard] name length bad: ' + name.length);
     return jsonResponse({ error: GENERIC }, 400);
   }
 
   // Date must be YYYY-MM-DD and within [today, today + 60d]
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.date))) {
-    console.log('[guard] date format bad: ' + body.date);
+    Logger.log('[guard] date format bad: ' + body.date);
     return jsonResponse({ error: GENERIC }, 400);
   }
   const reqDate = new Date(body.date + 'T00:00:00');
   if (isNaN(reqDate.getTime())) {
-    console.log('[guard] date parse NaN: ' + body.date);
+    Logger.log('[guard] date parse NaN: ' + body.date);
     return jsonResponse({ error: GENERIC }, 400);
   }
   const today = new Date();
@@ -633,25 +633,25 @@ function handleBookingRequest(body) {
   const maxAhead = new Date(today);
   maxAhead.setDate(maxAhead.getDate() + 60);
   if (reqDate < today || reqDate > maxAhead) {
-    console.log('[guard] date out of window. reqDate=' + reqDate.toISOString() + ' today=' + today.toISOString());
+    Logger.log('[guard] date out of window. reqDate=' + reqDate.toISOString() + ' today=' + today.toISOString());
     return jsonResponse({ error: GENERIC }, 400);
   }
 
   // Validate whole-hour constraint (reject any non-integer, non-0-23)
   const startHour = parseInt(body.startHour, 10);
   if (!Number.isInteger(startHour) || startHour !== Number(body.startHour) || startHour < 0 || startHour > 23) {
-    console.log('[guard] startHour bad: ' + body.startHour);
+    Logger.log('[guard] startHour bad: ' + body.startHour);
     return jsonResponse({ error: GENERIC }, 400);
   }
   const durationHours = parseInt(body.durationHours, 10);
   if (![1, 2, 3].includes(durationHours)) {
-    console.log('[guard] durationHours bad: ' + body.durationHours);
+    Logger.log('[guard] durationHours bad: ' + body.durationHours);
     return jsonResponse({ error: GENERIC }, 400);
   }
 
   // Validate court allow-list
   if (!cfg.courts[body.courtId]) {
-    console.log('[guard] courtId not in allow-list. body.courtId=' + body.courtId + ' courts=' + JSON.stringify(Object.keys(cfg.courts || {})));
+    Logger.log('[guard] courtId not in allow-list. body.courtId=' + body.courtId + ' courts=' + JSON.stringify(Object.keys(cfg.courts || {})));
     return jsonResponse({ error: GENERIC }, 400);
   }
 
