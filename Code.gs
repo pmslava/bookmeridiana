@@ -951,14 +951,15 @@ function handleConfirmTraining(token) {
     return htmlResponse('Link expired', 'This confirmation link has expired. Please submit your request again.');
   }
 
-  // Create Google Task. Wrapped in try/catch because if the Tasks advanced
-  // service isn't enabled in the script project yet, the `Tasks` global
-  // won't exist and would throw ReferenceError — we don't want that to
-  // break the admin email, which is the backup channel.
+  // Create Google Task. Wrapped in try/catch because the Tasks REST call
+  // can fail for many reasons (quota, auth scope revoked, transient 5xx),
+  // and we don't want that to break the admin email, which is the backup
+  // channel — a missed task is annoying, a missed admin email is a lost
+  // lead.
   try {
     createTrainingTask(pending);
   } catch (err) {
-    Logger.log('Could not create Google Task (Tasks advanced service not enabled?): ' + err.message);
+    Logger.log('Could not create Google Task: ' + err.message);
   }
 
   // Notify admins by email (backup channel).
@@ -979,10 +980,12 @@ function handleConfirmTraining(token) {
   );
 }
 
-// Create a task in bookmeridiana@gmail.com's default task list.
-// Requires the "Tasks" advanced Google service to be enabled in the
-// script project (appsscript.json declares it; the editor prompts
-// for consent on first deploy).
+// Create a task in bookmeridiana@gmail.com's default task list via the
+// Tasks REST API. We call it directly through UrlFetchApp (rather than
+// through the `Tasks` advanced service) so the script works on any GCP
+// project configuration without needing the advanced service enabled in
+// the editor's Services sidebar. The `tasks` OAuth scope is declared in
+// appsscript.json, which is all Google requires for this REST call.
 function createTrainingTask(pending) {
   // Only the date portion of `due` is displayed in Google Tasks — time
   // is discarded. Setting it to today makes the task show up as
@@ -994,7 +997,22 @@ function createTrainingTask(pending) {
   const notes = buildTrainingNotes(pending);
 
   const task = { title: title, notes: notes, due: dueIso };
-  Tasks.Tasks.insert(task, '@default');
+
+  const response = UrlFetchApp.fetch(
+    'https://tasks.googleapis.com/tasks/v1/lists/@default/tasks',
+    {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      payload: JSON.stringify(task),
+      muteHttpExceptions: true,
+    }
+  );
+
+  const code = response.getResponseCode();
+  if (code < 200 || code >= 300) {
+    throw new Error('Tasks API returned HTTP ' + code + ': ' + response.getContentText());
+  }
 }
 
 function buildTrainingNotes(pending) {
