@@ -92,7 +92,7 @@ function publicSettings(full) {
 
 // Seeds settings_json with a neutral template. Calendar IDs, admin
 // emails, and fromEmail are LEFT BLANK on purpose so no
-// tenniskosmos-specific data lives in this repo. Fill them from the
+// teniskosmos-specific data lives in this repo. Fill them from the
 // admin page on first boot, or paste them directly into the
 // settings_json property via Project Settings -> Script Properties.
 function setupInitialSettings() {
@@ -104,7 +104,7 @@ function setupInitialSettings() {
   const seed = {
     siteName: 'Tennis Kosmos',
     timezone: 'Europe/Belgrade',
-    siteUrl: 'https://tenniskosmos.com/',
+    siteUrl: 'https://teniskosmos.com/',
     daysAhead: 10,
     slotLengthMinutes: 60,
     pendingTtlMinutes: 30,

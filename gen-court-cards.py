@@ -3,7 +3,7 @@ Generate court-number cards (court-1.png ... court-4.png).
 
 Clay terracotta background (#c66c4d — matches the clay-court color used
 elsewhere in the site), white numeral, white "TEREN" label, white
-"tenniskosmos.com" footer. 1800x2400, ready to print portrait.
+"teniskosmos.com" footer. 1800x2400, ready to print portrait.
 
 Run:  python3 gen-court-cards.py
 """
@@ -36,7 +36,7 @@ def make_card(number: int, out_path: str) -> None:
     text_centered(d, (W // 2, 420), "TEREN", font(190))
     d.rectangle([W // 2 - 240, 560, W // 2 + 240, 572], fill=WHITE)
     text_centered(d, (W // 2, H // 2 + 90), str(number), font(1500))
-    text_centered(d, (W // 2, H - 180), "tenniskosmos.com", font(78))
+    text_centered(d, (W // 2, H - 180), "teniskosmos.com", font(78))
 
     img.save(out_path, "PNG")
 
