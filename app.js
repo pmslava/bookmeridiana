@@ -10,8 +10,8 @@
   const STRINGS = {
     en: {
       bookCourt: 'Book the court',
-      bookCoach: 'Book training with a coach',
-      tagline: 'Book your court or training',
+      requestTraining: 'Request training',
+      tagline: 'Book your court or request a training',
       loading: 'Loading availability…',
       noSlots: 'No available slots for this day',
       noConfig: 'No available hours configured — please contact us',
@@ -20,29 +20,44 @@
       namePlaceholder: 'Your full name',
       email: 'Email',
       emailPlaceholder: 'your@email.com',
-      phone: 'Phone (optional)',
+      phoneOptional: 'Phone (optional)',
+      phone: 'Phone',
       phonePlaceholder: '+381 ...',
-      language: 'Preferred language',
       book: 'Book',
+      submit: 'Send request',
       cancel: 'Cancel',
       bookingTitle: 'Complete your booking',
       court: 'Court',
       courts: 'Courts',
-      coach: 'Coach',
-      price: 'Price',
       total: 'Total',
       checkEmail: 'Check your email!',
       checkEmailDesc: 'We sent a confirmation link to your email. Click it to finalize your booking.',
-      bookingError: 'Booking failed. Please try again.',
+      checkEmailTraining: 'We sent a confirmation link to your email. Click it to send your training request — we\'ll call you back after that.',
+      bookingError: 'Something went wrong. Please try again.',
       slotTaken: 'This slot was just booked. Please pick another.',
-      chooseCoach: 'Choose a coach',
       chooseCourt: 'Choose a court',
-      or: 'or',
+      // Training request form
+      trainingTitle: 'Request a training',
+      trainingIntro: 'Fill out this form and one of our coaches will call you back to arrange a training session that fits you.',
+      level: 'Your level',
+      levelBeginner: 'Beginner',
+      levelIntermediate: 'Intermediate',
+      levelAdvanced: 'Advanced',
+      rackets: 'Rackets',
+      racketsHave: 'I have my own',
+      racketsBorrow: 'I need to borrow',
+      group: 'Who\'s training',
+      groupSolo: 'Solo',
+      groupPartner: 'With partner',
+      groupFamily: 'Family',
+      groupKids: 'Kids',
+      notes: 'When do you want to play? Anything else we should know?',
+      notesPlaceholder: 'E.g. weekday evenings, Saturday mornings, preferred coach, injuries…',
     },
     sr: {
       bookCourt: 'Rezervišite teren',
-      bookCoach: 'Trening sa trenerom',
-      tagline: 'Rezervišite teren ili trening',
+      requestTraining: 'Zakažite trening',
+      tagline: 'Rezervišite teren ili zakažite trening',
       loading: 'Učitavanje dostupnosti…',
       noSlots: 'Nema slobodnih termina za ovaj dan',
       noConfig: 'Nema podešenih radnih sati — kontaktirajte nas',
@@ -51,29 +66,44 @@
       namePlaceholder: 'Vaše puno ime',
       email: 'Email',
       emailPlaceholder: 'vaš@email.com',
-      phone: 'Telefon (opciono)',
+      phoneOptional: 'Telefon (opciono)',
+      phone: 'Telefon',
       phonePlaceholder: '+381 ...',
-      language: 'Jezik',
       book: 'Rezervišite',
+      submit: 'Pošalji zahtev',
       cancel: 'Otkaži',
       bookingTitle: 'Završite rezervaciju',
       court: 'Teren',
       courts: 'Tereni',
-      coach: 'Trener',
-      price: 'Cena',
       total: 'Ukupno',
       checkEmail: 'Proverite email!',
       checkEmailDesc: 'Poslali smo link za potvrdu na vaš email. Kliknite na njega da finalizujete rezervaciju.',
-      bookingError: 'Rezervacija nije uspela. Pokušajte ponovo.',
+      checkEmailTraining: 'Poslali smo link za potvrdu na vaš email. Kliknite na njega da pošaljete zahtev — posle toga ćemo vas pozvati.',
+      bookingError: 'Nešto nije u redu. Pokušajte ponovo.',
       slotTaken: 'Ovaj termin je upravo rezervisan. Izaberite drugi.',
-      chooseCoach: 'Izaberite trenera',
       chooseCourt: 'Izaberite teren',
-      or: 'ili',
+      // Training request form
+      trainingTitle: 'Zakažite trening',
+      trainingIntro: 'Popunite formular i jedan od naših trenera će vas pozvati da dogovorite trening koji vam odgovara.',
+      level: 'Vaš nivo',
+      levelBeginner: 'Početnik',
+      levelIntermediate: 'Srednji',
+      levelAdvanced: 'Napredan',
+      rackets: 'Reketi',
+      racketsHave: 'Imam svoj',
+      racketsBorrow: 'Treba mi',
+      group: 'Ko trenira',
+      groupSolo: 'Sam',
+      groupPartner: 'Sa partnerom',
+      groupFamily: 'Porodica',
+      groupKids: 'Deca',
+      notes: 'Kada želite da igrate? Još nešto što treba da znamo?',
+      notesPlaceholder: 'Npr. radnim danima uveče, subota ujutru, željeni trener, povrede…',
     },
     ru: {
       bookCourt: 'Забронировать корт',
-      bookCoach: 'Тренировка с тренером',
-      tagline: 'Забронируйте корт или тренировку',
+      requestTraining: 'Заявка на тренировку',
+      tagline: 'Забронируйте корт или подайте заявку на тренировку',
       loading: 'Загрузка доступности…',
       noSlots: 'Нет свободных слотов на этот день',
       noConfig: 'Нет настроенных рабочих часов — свяжитесь с нами',
@@ -82,42 +112,66 @@
       namePlaceholder: 'Ваше полное имя',
       email: 'Email',
       emailPlaceholder: 'ваш@email.com',
-      phone: 'Телефон (необязательно)',
+      phoneOptional: 'Телефон (необязательно)',
+      phone: 'Телефон',
       phonePlaceholder: '+381 ...',
-      language: 'Язык',
       book: 'Забронировать',
+      submit: 'Отправить заявку',
       cancel: 'Отмена',
       bookingTitle: 'Завершите бронирование',
       court: 'Корт',
       courts: 'Корты',
-      coach: 'Тренер',
-      price: 'Цена',
       total: 'Итого',
       checkEmail: 'Проверьте почту!',
       checkEmailDesc: 'Мы отправили ссылку для подтверждения на ваш email. Нажмите на неё, чтобы завершить бронирование.',
-      bookingError: 'Бронирование не удалось. Попробуйте снова.',
+      checkEmailTraining: 'Мы отправили ссылку для подтверждения на ваш email. Нажмите на неё, чтобы отправить заявку — после этого мы вам перезвоним.',
+      bookingError: 'Что-то пошло не так. Попробуйте снова.',
       slotTaken: 'Этот слот только что забронирован. Выберите другой.',
-      chooseCoach: 'Выберите тренера',
       chooseCourt: 'Выберите корт',
-      or: 'или',
+      // Training request form
+      trainingTitle: 'Заявка на тренировку',
+      trainingIntro: 'Заполните форму и один из наших тренеров перезвонит вам, чтобы договориться о подходящей тренировке.',
+      level: 'Ваш уровень',
+      levelBeginner: 'Начинающий',
+      levelIntermediate: 'Средний',
+      levelAdvanced: 'Продвинутый',
+      rackets: 'Ракетки',
+      racketsHave: 'Своя есть',
+      racketsBorrow: 'Нужна напрокат',
+      group: 'Кто тренируется',
+      groupSolo: 'Один',
+      groupPartner: 'С партнёром',
+      groupFamily: 'Семья',
+      groupKids: 'Дети',
+      notes: 'Когда хотите играть? Что-нибудь ещё, что нам нужно знать?',
+      notesPlaceholder: 'Напр. будни вечером, суббота утром, предпочитаемый тренер, травмы…',
     }
   };
 
   const LOCALE_MAP = { en: 'en-US', sr: 'sr-Latn-RS', ru: 'ru-RU' };
   const DAY_NAMES_MAP = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
+  // Training request pill-selector value maps
+  const LEVEL_KEYS   = [['beginner', 'levelBeginner'], ['intermediate', 'levelIntermediate'], ['advanced', 'levelAdvanced']];
+  const RACKETS_KEYS = [['have', 'racketsHave'], ['borrow', 'racketsBorrow']];
+  const GROUP_KEYS   = [['solo', 'groupSolo'], ['partner', 'groupPartner'], ['family', 'groupFamily'], ['kids', 'groupKids']];
+
   // ---- State ----
   let config = null;
   let availability = null; // raw busy intervals from Apps Script
   let currentLang = 'sr';
-  let currentMode = 'court'; // 'court' or 'coach'
+  let currentMode = 'court'; // 'court' or 'training'
   let selectedDate = null;
   let selectedDuration = 1;
-  let expandedSlot = null; // { hour, step } — which slot has picker open
-  let selectedCoach = null; // coach key during selection
+  let expandedSlot = null; // { hour } — which slot has court picker open
 
   function t(key) { return STRINGS[currentLang]?.[key] || STRINGS.en[key] || key; }
   function locale() { return LOCALE_MAP[currentLang] || 'en-US'; }
+  function getCurrency() {
+    return (config && config.currency)
+      || (config && Array.isArray(config.courtPrices) && config.courtPrices[0] && config.courtPrices[0].currency)
+      || 'RSD';
+  }
 
   // ---- Tennis ball SVG inline ----
   function tennisBallSVG(size) {
@@ -125,18 +179,6 @@
       <circle cx="50" cy="50" r="48" fill="#c5e84c"/>
       <path d="M 22 15 Q 50 50, 22 85" stroke="white" stroke-width="3" fill="none" opacity="0.7"/>
       <path d="M 78 15 Q 50 50, 78 85" stroke="white" stroke-width="3" fill="none" opacity="0.7"/>
-    </svg>`;
-  }
-
-  // ---- Court SVG inline ----
-  function courtSVG(w, h) {
-    // Simplified top-down court, clay color
-    return `<svg width="${w}" height="${h}" viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
-      <rect x="0" y="0" width="200" height="100" rx="4" fill="#c66c4d"/>
-      <rect x="10" y="5" width="180" height="90" fill="none" stroke="white" stroke-width="1.5"/>
-      <line x1="100" y1="5" x2="100" y2="95" stroke="white" stroke-width="1.5"/>
-      <rect x="40" y="5" width="120" height="90" fill="none" stroke="white" stroke-width="1"/>
-      <line x1="40" y1="50" x2="160" y2="50" stroke="white" stroke-width="1"/>
     </svg>`;
   }
 
@@ -175,6 +217,7 @@
 
   // ---- Fetch availability from Apps Script ----
   async function loadAvailability() {
+    if (currentMode !== 'court') return;
     renderLoading();
     try {
       const url = config.appsScriptUrl + '?action=availability&days=' + (config.daysAhead || 10);
@@ -185,7 +228,7 @@
     } catch (e) {
       console.error('Availability fetch failed:', e);
       // Use empty availability so the UI still renders (all slots appear free for demo)
-      availability = { courts: {}, coaches: {} };
+      availability = { courts: {} };
     }
     renderCalendar();
     renderSlots();
@@ -226,38 +269,12 @@
     });
   }
 
-  function isCoachBusy(coachKey, date, hour) {
-    // API returns: coaches[key].busy = [{start, end}, ...]
-    const busyList = availability.coaches?.[coachKey]?.busy;
-    if (!busyList || busyList.length === 0) return false;
-    const slotStart = new Date(date);
-    slotStart.setHours(hour, 0, 0, 0);
-    const slotEnd = new Date(date);
-    slotEnd.setHours(hour + 1, 0, 0, 0);
-    return busyList.some(b => {
-      const bs = new Date(b.start);
-      const be = new Date(b.end);
-      return bs < slotEnd && be > slotStart;
-    });
-  }
-
   function getFreeCourtsForSlot(date, hour, duration) {
     // Returns array of court numbers that are free for `duration` consecutive hours
     const courtNums = Object.keys(config.calendars.courts);
     return courtNums.filter(cn => {
       for (let h = hour; h < hour + duration; h++) {
         if (isCourtBusy(cn, date, h)) return false;
-      }
-      return true;
-    });
-  }
-
-  function getFreeCoachesForSlot(date, hour, duration) {
-    // Returns array of coach keys that are free for `duration` consecutive hours
-    const coachKeys = Object.keys(config.calendars.coaches);
-    return coachKeys.filter(ck => {
-      for (let h = hour; h < hour + duration; h++) {
-        if (isCoachBusy(ck, date, h)) return false;
       }
       return true;
     });
@@ -281,14 +298,7 @@
         const freeCourts = getFreeCourtsForSlot(date, h, duration);
         if (freeCourts.length === 0) continue;
 
-        if (currentMode === 'court') {
-          slots.push({ hour: h, courts: freeCourts });
-        } else {
-          // Coach mode: need at least one free coach AND one free court
-          const freeCoaches = getFreeCoachesForSlot(date, h, duration);
-          if (freeCoaches.length === 0) continue;
-          slots.push({ hour: h, courts: freeCourts, coaches: freeCoaches });
-        }
+        slots.push({ hour: h, courts: freeCourts });
       }
     }
 
@@ -309,14 +319,10 @@
     return config.courtPrices[0];
   }
 
-  function getTotalPrice(hour, duration, coachKey) {
+  function getTotalPrice(hour, duration) {
     let total = 0;
     for (let h = hour; h < hour + duration; h++) {
-      const p = getPriceForHour(h);
-      total += p.price;
-    }
-    if (coachKey) {
-      total += (config.coachPrices[coachKey] || 0) * duration;
+      total += getPriceForHour(h).price;
     }
     return total;
   }
@@ -356,20 +362,28 @@
     app.innerHTML = `
       <div class="tabs">
         <button class="tab-btn ${currentMode === 'court' ? 'active' : ''}" data-mode="court">${t('bookCourt')}</button>
-        <button class="tab-btn ${currentMode === 'coach' ? 'active' : ''}" data-mode="coach">${t('bookCoach')}</button>
+        <button class="tab-btn ${currentMode === 'training' ? 'active' : ''}" data-mode="training">${t('requestTraining')}</button>
       </div>
       <div id="calendar-pane"></div>
       <div id="slot-pane"></div>
+      <div id="training-pane"></div>
     `;
 
     app.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         currentMode = btn.dataset.mode;
         expandedSlot = null;
-        selectedCoach = null;
         renderShell();
-        renderCalendar();
-        renderSlots();
+        if (currentMode === 'court') {
+          if (availability) {
+            renderCalendar();
+            renderSlots();
+          } else {
+            loadAvailability();
+          }
+        } else {
+          renderTrainingForm();
+        }
       });
     });
 
@@ -383,12 +397,15 @@
         btn.addEventListener('click', () => {
           currentLang = btn.dataset.lang;
           renderShell();
-          renderCalendar();
-          renderSlots();
+          if (currentMode === 'court') {
+            renderCalendar();
+            renderSlots();
+          } else {
+            renderTrainingForm();
+          }
           // Update hero
           const tagline = document.querySelector('.tagline');
           if (tagline) tagline.textContent = t('tagline');
-          // Update tab labels already handled by renderShell
         });
       });
     }
@@ -431,6 +448,7 @@
 
   // ---- Render calendar ----
   function renderCalendar() {
+    if (currentMode !== 'court') return;
     if (!availability) return;
 
     const pane = document.getElementById('calendar-pane');
@@ -509,7 +527,6 @@
         const parts = cell.dataset.date.split('-');
         selectedDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
         expandedSlot = null;
-        selectedCoach = null;
         renderCalendar();
         renderSlots();
       });
@@ -518,6 +535,7 @@
 
   // ---- Render slots ----
   function renderSlots() {
+    if (currentMode !== 'court') return;
     const pane = document.getElementById('slot-pane');
     if (!pane) return;
 
@@ -530,6 +548,7 @@
     }
 
     const slots = getSlotsForDate(selectedDate, selectedDuration);
+    const currency = getCurrency();
 
     let html = `
       <div class="slot-section">
@@ -554,62 +573,20 @@
         const timeStr = formatHour(slot.hour);
         const isExpanded = expandedSlot && expandedSlot.hour === slot.hour;
 
-        if (currentMode === 'court') {
-          const price = getPriceForHour(slot.hour);
-          const courtLabel = slot.courts.length === 1
-            ? `${t('court')} ${slot.courts[0]}`
-            : `${t('courts')} ${slot.courts.join(', ')}`;
-          html += `<button class="slot-btn ${isExpanded ? 'expanded' : ''}" data-hour="${slot.hour}">
-            <span class="slot-time">${timeStr}</span>
-            <span class="slot-info"><span class="slot-price">${price.price} ${price.currency}</span><span class="slot-courts">· ${courtLabel}</span></span>
-          </button>`;
+        const price = getPriceForHour(slot.hour);
+        const courtLabel = slot.courts.length === 1
+          ? `${t('court')} ${slot.courts[0]}`
+          : `${t('courts')} ${slot.courts.join(', ')}`;
+        html += `<button class="slot-btn ${isExpanded ? 'expanded' : ''}" data-hour="${slot.hour}">
+          <span class="slot-time">${timeStr}</span>
+          <span class="slot-info"><span class="slot-price">${price.price} ${currency}</span><span class="slot-courts">· ${courtLabel}</span></span>
+        </button>`;
 
-          if (isExpanded && slot.courts.length > 1) {
-            html += `<div class="picker">
-              <span class="picker-label">${t('chooseCourt')}</span>
-              ${slot.courts.map(c => `<button class="picker-pill" data-court="${c}">${t('court')} ${c}</button>`).join('')}
-            </div>`;
-          }
-        } else {
-          // Coach mode
-          const coachNames = slot.coaches.map(ck => config.calendars.coaches[ck].name);
-          const courtLabel = slot.courts.length === 1
-            ? `${t('court')} ${slot.courts[0]}`
-            : `${t('courts')} ${slot.courts.join(', ')}`;
-          let coachLabel;
-          if (coachNames.length === 1) {
-            coachLabel = coachNames[0];
-          } else {
-            coachLabel = coachNames.join(` ${t('or')} `);
-          }
-
-          html += `<button class="slot-btn ${isExpanded ? 'expanded' : ''}" data-hour="${slot.hour}">
-            <span class="slot-time">${timeStr}</span>
-            <span class="slot-info"><span class="slot-price">${coachLabel}</span><span class="slot-courts">· ${courtLabel}</span></span>
-          </button>`;
-
-          if (isExpanded) {
-            // If multiple coaches, show coach picker first
-            if (slot.coaches.length > 1 && !selectedCoach) {
-              html += `<div class="picker">
-                <span class="picker-label">${t('chooseCoach')}</span>
-                ${slot.coaches.map(ck => {
-                  const name = config.calendars.coaches[ck].name;
-                  const price = config.coachPrices[ck];
-                  return `<button class="picker-pill" data-coach="${ck}">${name} — ${price} ${config.coachPrices.currency}</button>`;
-                }).join('')}
-              </div>`;
-            } else {
-              // Coach selected (or only one), show court picker if needed
-              const effectiveCoach = selectedCoach || slot.coaches[0];
-              if (slot.courts.length > 1) {
-                html += `<div class="picker">
-                  <span class="picker-label">${t('chooseCourt')}</span>
-                  ${slot.courts.map(c => `<button class="picker-pill" data-court="${c}" data-coach-sel="${effectiveCoach}">${t('court')} ${c}</button>`).join('')}
-                </div>`;
-              }
-            }
-          }
+        if (isExpanded && slot.courts.length > 1) {
+          html += `<div class="picker">
+            <span class="picker-label">${t('chooseCourt')}</span>
+            ${slot.courts.map(c => `<button class="picker-pill" data-court="${c}">${t('court')} ${c}</button>`).join('')}
+          </div>`;
         }
       }
       html += `</div>`;
@@ -623,7 +600,6 @@
       btn.addEventListener('click', () => {
         selectedDuration = parseInt(btn.dataset.dur);
         expandedSlot = null;
-        selectedCoach = null;
         renderSlots();
       });
     });
@@ -635,57 +611,21 @@
         const slot = slots.find(s => s.hour === hour);
 
         if (expandedSlot && expandedSlot.hour === hour) {
-          // Already expanded — if only 1 court (and in court mode or coach already picked), go to form
-          if (currentMode === 'court' && slot.courts.length === 1) {
-            openBookingForm(hour, slot.courts[0], null);
+          if (slot.courts.length === 1) {
+            openBookingForm(hour, slot.courts[0]);
             return;
-          }
-          if (currentMode === 'coach') {
-            const coach = selectedCoach || (slot.coaches.length === 1 ? slot.coaches[0] : null);
-            if (coach && slot.courts.length === 1) {
-              openBookingForm(hour, slot.courts[0], coach);
-              return;
-            }
           }
           // Toggle off
           expandedSlot = null;
-          selectedCoach = null;
           renderSlots();
           return;
         }
 
         // Expand or go straight to form
-        if (currentMode === 'court') {
-          if (slot.courts.length === 1) {
-            openBookingForm(hour, slot.courts[0], null);
-          } else {
-            expandedSlot = { hour };
-            selectedCoach = null;
-            renderSlots();
-          }
-        } else {
-          if (slot.coaches.length === 1 && slot.courts.length === 1) {
-            openBookingForm(hour, slot.courts[0], slot.coaches[0]);
-          } else {
-            expandedSlot = { hour };
-            selectedCoach = null;
-            renderSlots();
-          }
-        }
-      });
-    });
-
-    // Coach picker
-    pane.querySelectorAll('.picker-pill[data-coach]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        selectedCoach = btn.dataset.coach;
-        const hour = expandedSlot.hour;
-        const slot = slots.find(s => s.hour === hour);
-        // If only one court, go straight to form
         if (slot.courts.length === 1) {
-          openBookingForm(hour, slot.courts[0], selectedCoach);
+          openBookingForm(hour, slot.courts[0]);
         } else {
+          expandedSlot = { hour };
           renderSlots();
         }
       });
@@ -697,32 +637,24 @@
         e.stopPropagation();
         const court = btn.dataset.court;
         const hour = expandedSlot.hour;
-        const coach = btn.dataset.coachSel || null;
-        openBookingForm(hour, court, coach);
+        openBookingForm(hour, court);
       });
     });
   }
 
-  // ---- Booking form modal ----
-  function openBookingForm(hour, courtNum, coachKey) {
+  // ---- Booking form modal (court-only) ----
+  function openBookingForm(hour, courtNum) {
     const timeStr = formatHour(hour);
     const endTimeStr = formatHour(hour + selectedDuration);
     const dateStr = formatDateShort(selectedDate);
-    const total = getTotalPrice(hour, selectedDuration, coachKey);
-    const currency = config.courtPrices[0].currency;
+    const total = getTotalPrice(hour, selectedDuration);
+    const currency = getCurrency();
 
-    // Court price for the duration
-    let courtTotal = 0;
-    for (let h = hour; h < hour + selectedDuration; h++) {
-      courtTotal += getPriceForHour(h).price;
-    }
-
-    let summaryParts = [`${dateStr}, ${timeStr} – ${endTimeStr}`, `${t('court')} ${courtNum} — ${courtTotal} ${currency}`];
-    if (coachKey) {
-      const coachPrice = (config.coachPrices[coachKey] || 0) * selectedDuration;
-      summaryParts.push(`${t('coach')}: ${config.calendars.coaches[coachKey].name} — ${coachPrice} ${currency}`);
-    }
-    summaryParts.push(`${t('total')}: ${total} ${currency}`);
+    let summaryParts = [
+      `${dateStr}, ${timeStr} – ${endTimeStr}`,
+      `${t('court')} ${courtNum}`,
+      `${t('total')}: ${total} ${currency}`,
+    ];
 
     const overlay = document.createElement('div');
     overlay.className = 'booking-modal-overlay';
@@ -743,14 +675,8 @@
             <input type="email" name="email" required placeholder="${t('emailPlaceholder')}">
           </div>
           <div class="form-group">
-            <label>${t('phone')}</label>
+            <label>${t('phoneOptional')}</label>
             <input type="tel" name="phone" placeholder="${t('phonePlaceholder')}">
-          </div>
-          <div class="form-group">
-            <label>${t('language')}</label>
-            <select name="language">
-              ${config.languages.map(l => `<option value="${l}" ${l === currentLang ? 'selected' : ''}>${l.toUpperCase()}</option>`).join('')}
-            </select>
           </div>
           <div class="form-actions">
             <button type="button" class="btn-secondary" id="cancel-booking">${t('cancel')}</button>
@@ -795,11 +721,10 @@
         startHour: hour,
         durationHours: selectedDuration,
         courtId: courtNum,
-        coachId: coachKey || '',
         name: form.name.value.trim(),
         email: form.email.value.trim(),
         phone: form.phone.value.trim(),
-        language: form.language.value,
+        language: currentLang,
       };
 
       try {
@@ -848,6 +773,158 @@
         submitBtn.textContent = t('book');
         document.getElementById('form-status').style.display = 'block';
         document.getElementById('form-status').innerHTML = `
+          <div class="error-state"><p>${t('bookingError')}</p></div>
+        `;
+      }
+    });
+  }
+
+  // ---- Render training request form ----
+  function renderTrainingForm() {
+    // In training mode the calendar/slot panes are empty; the request
+    // form lives in its own pane. Clear any leftover DOM from the court tab.
+    const calPane = document.getElementById('calendar-pane');
+    const slotPane = document.getElementById('slot-pane');
+    if (calPane) calPane.innerHTML = '';
+    if (slotPane) slotPane.innerHTML = '';
+
+    const pane = document.getElementById('training-pane');
+    if (!pane) return;
+
+    const pillGroup = (name, keys) => keys.map(([val, tkey]) =>
+      `<button type="button" class="request-pill" data-field="${name}" data-value="${val}">${t(tkey)}</button>`
+    ).join('');
+
+    pane.innerHTML = `
+      <div class="request-section">
+        <h3>${t('trainingTitle')}</h3>
+        <p class="request-intro">${t('trainingIntro')}</p>
+        <form id="request-form" novalidate>
+          <div class="form-group">
+            <label>${t('name')} *</label>
+            <input type="text" name="name" required placeholder="${t('namePlaceholder')}">
+          </div>
+          <div class="form-group">
+            <label>${t('phone')} *</label>
+            <input type="tel" name="phone" required placeholder="${t('phonePlaceholder')}">
+          </div>
+          <div class="form-group">
+            <label>${t('email')} *</label>
+            <input type="email" name="email" required placeholder="${t('emailPlaceholder')}">
+          </div>
+          <div class="form-group">
+            <label>${t('level')}</label>
+            <div class="pill-group" data-group="level">${pillGroup('level', LEVEL_KEYS)}</div>
+          </div>
+          <div class="form-group">
+            <label>${t('rackets')}</label>
+            <div class="pill-group" data-group="rackets">${pillGroup('rackets', RACKETS_KEYS)}</div>
+          </div>
+          <div class="form-group">
+            <label>${t('group')}</label>
+            <div class="pill-group" data-group="group">${pillGroup('group', GROUP_KEYS)}</div>
+          </div>
+          <div class="form-group">
+            <label>${t('notes')}</label>
+            <textarea name="notes" rows="3" placeholder="${t('notesPlaceholder')}"></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary" id="submit-request">${t('submit')}</button>
+          </div>
+        </form>
+        <div id="request-status" style="display:none;"></div>
+      </div>
+    `;
+
+    // Pill-group single-select
+    pane.querySelectorAll('.pill-group').forEach(group => {
+      group.addEventListener('click', (e) => {
+        const btn = e.target.closest('.request-pill');
+        if (!btn) return;
+        e.preventDefault();
+        const isActive = btn.classList.contains('active');
+        group.querySelectorAll('.request-pill').forEach(b => b.classList.remove('active'));
+        if (!isActive) btn.classList.add('active');
+      });
+    });
+
+    document.getElementById('request-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const submitBtn = document.getElementById('submit-request');
+
+      const name = form.name.value.trim();
+      const phone = form.phone.value.trim();
+      const email = form.email.value.trim();
+      const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+      if (!name || !phone || !emailOk) {
+        // Surface native required/pattern messages if present.
+        form.reportValidity();
+        return;
+      }
+
+      const readPill = (field) => {
+        const active = pane.querySelector(`.pill-group[data-group="${field}"] .request-pill.active`);
+        return active ? active.dataset.value : '';
+      };
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = '…';
+
+      const payload = {
+        action: 'requestTraining',
+        name: name,
+        phone: phone,
+        email: email,
+        level: readPill('level'),
+        rackets: readPill('rackets'),
+        group: readPill('group'),
+        notes: form.notes.value.trim(),
+        language: currentLang,
+      };
+
+      try {
+        const resp = await fetch(config.appsScriptUrl, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          redirect: 'follow',
+        });
+        const text = await resp.text();
+        let data;
+        try { data = JSON.parse(text); } catch { data = { error: text }; }
+
+        if (data.status === 'pending') {
+          form.style.display = 'none';
+          const status = document.getElementById('request-status');
+          status.style.display = 'block';
+          status.innerHTML = `
+            <div class="success-state">
+              ${tennisBallSVG(40)}
+              <h4></h4>
+              <p></p>
+            </div>
+          `;
+          status.querySelector('h4').textContent = t('checkEmail');
+          status.querySelector('p').textContent = t('checkEmailTraining');
+        } else {
+          const msg = typeof data.error === 'string' && data.error ? data.error : t('bookingError');
+          form.style.display = 'none';
+          const status = document.getElementById('request-status');
+          status.style.display = 'block';
+          status.innerHTML = `
+            <div class="error-state">
+              ${tennisBallSVG(28)}
+              <p></p>
+            </div>
+          `;
+          status.querySelector('p').textContent = msg;
+        }
+      } catch (err) {
+        console.error('Request error:', err);
+        submitBtn.disabled = false;
+        submitBtn.textContent = t('submit');
+        document.getElementById('request-status').style.display = 'block';
+        document.getElementById('request-status').innerHTML = `
           <div class="error-state"><p>${t('bookingError')}</p></div>
         `;
       }

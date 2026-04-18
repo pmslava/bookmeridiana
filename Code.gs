@@ -5,8 +5,9 @@
 //
 //   1) PUBLIC deployment  — Execute as: Me, Access: Anyone.
 //      Its URL is stored in config.json on GitHub. Handles the
-//      booking flow (availability, book, confirm, cancel) and the
-//      redacted public settings endpoint (action=settings).
+//      booking flow (availability, book, confirm, cancel), the
+//      training-request flow (requestTraining, confirmTraining),
+//      and the redacted public settings endpoint (action=settings).
 //
 //   2) ADMIN deployment   — Execute as: Me, Access: Only myself.
 //      Its URL is NEVER committed to git. Serves admin.html and
@@ -23,6 +24,7 @@
 //
 // Requirements:
 //   - Calendar Advanced Service enabled in the script editor.
+//   - Tasks Advanced Service enabled (for training-request Google Tasks).
 //   - Script timezone set to Europe/Belgrade in Project Settings.
 // ============================================================
 
@@ -65,12 +67,7 @@ function getSettings() {
 function publicSettings(full) {
   // Return only the fields the public frontend legitimately needs.
   // Strips calendar IDs, admin emails, fromEmail, internal TTLs.
-  // Preserves the shape the frontend expects (calendars.courts keys,
-  // coaches.*.name) so app.js needs no structural changes.
-  const coachesPublic = {};
-  for (const key in (full.coaches || {})) {
-    coachesPublic[key] = { name: full.coaches[key].name };
-  }
+  // Preserves the shape the frontend expects (calendars.courts keys).
   const courtKeys = {};
   for (const key in (full.courts || {})) {
     courtKeys[key] = '';  // key presence matters; value intentionally blank
@@ -82,20 +79,19 @@ function publicSettings(full) {
     slotLengthMinutes: full.slotLengthMinutes,
     workingHours: full.workingHours,
     courtPrices: full.courtPrices,
-    coachPrices: full.coachPrices,
+    currency: full.currency,
     reminders: full.reminders,
     contact: full.contact,
     languages: full.languages,
     defaultLanguage: full.defaultLanguage,
     calendars: {
       courts: courtKeys,
-      coaches: coachesPublic,
     },
   };
 }
 
 // Seeds settings_json with a neutral template. Calendar IDs, admin
-// emails, coach emails, and fromEmail are LEFT BLANK on purpose so no
+// emails, and fromEmail are LEFT BLANK on purpose so no
 // tenniskosmos-specific data lives in this repo. Fill them from the
 // admin page on first boot, or paste them directly into the
 // settings_json property via Project Settings -> Script Properties.
@@ -108,7 +104,7 @@ function setupInitialSettings() {
   const seed = {
     siteName: 'Tennis Kosmos',
     timezone: 'Europe/Belgrade',
-    siteUrl: 'https://pmslava.github.io/bookmeridiana/',
+    siteUrl: 'https://tenniskosmos.com/',
     daysAhead: 10,
     slotLengthMinutes: 60,
     pendingTtlMinutes: 30,
@@ -122,16 +118,11 @@ function setupInitialSettings() {
       sunday:    [{ from: '09:00', to: '20:00' }],
     },
     courtPrices: [
-      { from: '08:00', to: '17:00', price: 600,  currency: 'RSD', label: 'Day' },
-      { from: '17:00', to: '20:00', price: 800,  currency: 'RSD', label: 'Evening' },
-      { from: '20:00', to: '22:00', price: 1200, currency: 'RSD', label: 'Lights' },
+      { from: '08:00', to: '17:00', price: 600,  label: 'Day' },
+      { from: '17:00', to: '20:00', price: 800,  label: 'Evening' },
+      { from: '20:00', to: '22:00', price: 1200, label: 'Lights' },
     ],
-    coachPrices: {
-      R: 1800,
-      I: 2500,
-      currency: 'RSD',
-      note: 'Coach price is added on top of court price.',
-    },
+    currency: 'RSD',
     reminders: { dayBefore: true, twoHoursBefore: true },
     contact: {
       phone: '',
@@ -147,13 +138,8 @@ function setupInitialSettings() {
       '3': '',
       '4': '',
     },
-    coaches: {
-      R: { name: 'Ratko', id: '', email: '' },
-      I: { name: 'Ivan',  id: '', email: '' },
-    },
     adminNotifications: {
       emails: [],
-      coachGetsOwnBookings: false,
     },
     fromEmail: '',
   };
@@ -161,11 +147,51 @@ function setupInitialSettings() {
   Logger.log('Settings initialized (template with blank private fields). Fill calendar IDs, admin emails, and contact info via the admin page.');
 }
 
+// One-shot migration: strips coach-related fields from an existing
+// settings_json, and lifts currency out of coachPrices to the top level.
+// Safe to run more than once (idempotent). Run this from the script
+// editor after deploying the new code.
+function migrateRemoveCoaches() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty('settings_json');
+  if (!raw) {
+    Logger.log('No settings_json to migrate. Run setupInitialSettings() first.');
+    return;
+  }
+  const s = JSON.parse(raw);
+  // Back up before touching anything.
+  props.setProperty('settings_json_backup', raw);
+
+  // Lift currency if still nested under coachPrices (or a band).
+  if (!s.currency) {
+    if (s.coachPrices && s.coachPrices.currency) {
+      s.currency = s.coachPrices.currency;
+    } else if (Array.isArray(s.courtPrices) && s.courtPrices[0] && s.courtPrices[0].currency) {
+      s.currency = s.courtPrices[0].currency;
+    } else {
+      s.currency = 'RSD';
+    }
+  }
+  // Drop per-band currency (redundant now).
+  if (Array.isArray(s.courtPrices)) {
+    s.courtPrices.forEach(function (b) { delete b.currency; });
+  }
+  // Delete coach branches.
+  delete s.coaches;
+  delete s.coachPrices;
+  if (s.adminNotifications) {
+    delete s.adminNotifications.coachGetsOwnBookings;
+  }
+
+  props.setProperty('settings_json', JSON.stringify(s));
+  Logger.log('Migration complete. Old settings backed up to settings_json_backup.');
+}
+
 function validateSettings(s) {
   if (!s || typeof s !== 'object') throw new Error('Settings must be an object.');
   const required = ['siteName','timezone','daysAhead','slotLengthMinutes','workingHours',
-    'courtPrices','coachPrices','reminders','contact','languages','defaultLanguage',
-    'courts','coaches','adminNotifications','fromEmail'];
+    'courtPrices','currency','reminders','contact','languages','defaultLanguage',
+    'courts','adminNotifications','fromEmail'];
   for (const k of required) {
     if (s[k] === undefined) throw new Error('Missing required field: ' + k);
   }
@@ -182,9 +208,6 @@ function validateSettings(s) {
   }
   if (!s.courts['1'] || !s.courts['2'] || !s.courts['3'] || !s.courts['4']) {
     throw new Error('All four court calendar IDs are required.');
-  }
-  if (!s.coaches.R || !s.coaches.I || !s.coaches.R.id || !s.coaches.I.id) {
-    throw new Error('Both coach calendar IDs (R and I) are required.');
   }
 }
 
@@ -245,7 +268,7 @@ const I18N = {
   en: {
     dayNames: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
     monthNames: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
-    hi: 'Hi', date: 'Date', time: 'Time', court: 'Court', coach: 'Coach',
+    hi: 'Hi', date: 'Date', time: 'Time', court: 'Court',
     confirmSubject: 'Confirm your booking — {date} at {time}',
     confirmIntro: 'Please confirm your tennis court booking:',
     clickToConfirm: 'Click here to confirm:',
@@ -266,11 +289,18 @@ const I18N = {
     htmlConfirmedBody: 'Your court is booked for {date} at {time}.<br><br>A confirmation email with a calendar invite has been sent to {email}.<br><br><a href="{url}">Back to {site}</a>',
     htmlCancelledTitle: 'Booking cancelled',
     htmlCancelledBody: 'Your booking for {date} at {time} has been cancelled.<br><br>A cancellation email has been sent to {email}.<br><br><a href="{url}">Book another time</a>',
+    // Training request flow
+    trConfirmSubject: 'Confirm your training request',
+    trConfirmIntro: 'Thank you for your training request! Please click the link below to confirm that this is really you:',
+    trConfirmedSubject: 'Training request received',
+    trConfirmedIntro: 'Thanks! We have received your training request and will call you back shortly.',
+    trHtmlConfirmedTitle: 'Training request received',
+    trHtmlConfirmedBody: 'Thanks, {name}! We will call you back shortly at {phone}.<br><br><a href="{url}">Back to {site}</a>',
   },
   sr: {
     dayNames: ['Ned','Pon','Uto','Sre','Čet','Pet','Sub'],
     monthNames: ['Jan','Feb','Mar','Apr','Maj','Jun','Jul','Avg','Sep','Okt','Nov','Dec'],
-    hi: 'Zdravo', date: 'Datum', time: 'Vreme', court: 'Teren', coach: 'Trener',
+    hi: 'Zdravo', date: 'Datum', time: 'Vreme', court: 'Teren',
     confirmSubject: 'Potvrdite rezervaciju — {date} u {time}',
     confirmIntro: 'Molimo potvrdite vašu rezervaciju terena:',
     clickToConfirm: 'Kliknite ovde za potvrdu:',
@@ -291,11 +321,18 @@ const I18N = {
     htmlConfirmedBody: 'Vaš teren je rezervisan za {date} u {time}.<br><br>Email sa potvrdom i pozivnicom za kalendar je poslat na {email}.<br><br><a href="{url}">Nazad na {site}</a>',
     htmlCancelledTitle: 'Rezervacija otkazana',
     htmlCancelledBody: 'Vaša rezervacija za {date} u {time} je otkazana.<br><br>Email o otkazivanju je poslat na {email}.<br><br><a href="{url}">Rezervišite drugi termin</a>',
+    // Training request flow
+    trConfirmSubject: 'Potvrdite zahtev za trening',
+    trConfirmIntro: 'Hvala na zahtevu za trening! Kliknite na link ispod da potvrdite da ste to stvarno vi:',
+    trConfirmedSubject: 'Zahtev za trening primljen',
+    trConfirmedIntro: 'Hvala! Primili smo vaš zahtev za trening i uskoro ćemo vas pozvati.',
+    trHtmlConfirmedTitle: 'Zahtev za trening primljen',
+    trHtmlConfirmedBody: 'Hvala, {name}! Uskoro ćemo vas pozvati na {phone}.<br><br><a href="{url}">Nazad na {site}</a>',
   },
   ru: {
     dayNames: ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'],
     monthNames: ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'],
-    hi: 'Здравствуйте', date: 'Дата', time: 'Время', court: 'Корт', coach: 'Тренер',
+    hi: 'Здравствуйте', date: 'Дата', time: 'Время', court: 'Корт',
     confirmSubject: 'Подтвердите бронирование — {date} в {time}',
     confirmIntro: 'Пожалуйста, подтвердите бронирование корта:',
     clickToConfirm: 'Нажмите, чтобы подтвердить:',
@@ -316,6 +353,13 @@ const I18N = {
     htmlConfirmedBody: 'Ваш корт забронирован на {date} в {time}.<br><br>На {email} отправлено письмо с подтверждением и приглашением в календарь.<br><br><a href="{url}">Вернуться на {site}</a>',
     htmlCancelledTitle: 'Бронирование отменено',
     htmlCancelledBody: 'Ваше бронирование на {date} в {time} отменено.<br><br>Письмо об отмене отправлено на {email}.<br><br><a href="{url}">Забронировать другое время</a>',
+    // Training request flow
+    trConfirmSubject: 'Подтвердите заявку на тренировку',
+    trConfirmIntro: 'Спасибо за заявку на тренировку! Нажмите на ссылку ниже, чтобы подтвердить, что это действительно вы:',
+    trConfirmedSubject: 'Заявка на тренировку получена',
+    trConfirmedIntro: 'Спасибо! Мы получили вашу заявку на тренировку и скоро перезвоним.',
+    trHtmlConfirmedTitle: 'Заявка на тренировку получена',
+    trHtmlConfirmedBody: 'Спасибо, {name}! Мы скоро перезвоним вам на номер {phone}.<br><br><a href="{url}">Вернуться на {site}</a>',
   },
 };
 
@@ -367,12 +411,20 @@ function doGet(e) {
       return jsonResponse(publicSettings(getSettings()));
     }
 
-    // --- Confirm a pending booking ---
+    // --- Confirm a pending court booking ---
     if (params.confirm) {
       if (!/^[0-9a-fA-F-]{8,64}$/.test(params.confirm)) {
         return htmlResponse('Invalid link', 'This link is not valid.');
       }
       return handleConfirm(params.confirm);
+    }
+
+    // --- Confirm a pending training request ---
+    if (params.confirmTraining) {
+      if (!/^[0-9a-fA-F-]{8,64}$/.test(params.confirmTraining)) {
+        return htmlResponse('Invalid link', 'This link is not valid.');
+      }
+      return handleConfirmTraining(params.confirmTraining);
     }
 
     // --- Cancel a confirmed booking ---
@@ -395,7 +447,8 @@ function doGet(e) {
 }
 
 // ============================================================
-// doPost — save admin settings or create a pending booking
+// doPost — save admin settings, create a pending court booking,
+//          or create a pending training request.
 // ============================================================
 
 function doPost(e) {
@@ -407,6 +460,10 @@ function doPost(e) {
       validateSettings(body.settings);
       saveSettingsToStore(body.settings);
       return jsonResponse({ status: 'ok' });
+    }
+
+    if (body.action === 'requestTraining') {
+      return handleTrainingRequest(body);
     }
 
     return handleBookingRequest(body);
@@ -476,7 +533,7 @@ function htmlEscape(s) {
 }
 
 // ============================================================
-// Availability — FreeBusy for all 6 calendars
+// Availability — FreeBusy for the 4 court calendars
 // ============================================================
 
 function handleAvailability(params) {
@@ -492,9 +549,6 @@ function handleAvailability(params) {
   const calendarIds = [];
   for (const key in cfg.courts) {
     calendarIds.push({ id: cfg.courts[key] });
-  }
-  for (const key in cfg.coaches) {
-    calendarIds.push({ id: cfg.coaches[key].id });
   }
 
   const request = {
@@ -512,7 +566,6 @@ function handleAvailability(params) {
     timeMax: timeMax.toISOString(),
     timezone: cfg.timezone,
     courts: {},
-    coaches: {},
   };
 
   for (const key in cfg.courts) {
@@ -524,21 +577,11 @@ function handleAvailability(params) {
     };
   }
 
-  for (const key in cfg.coaches) {
-    const calId = cfg.coaches[key].id;
-    const cal = response.calendars[calId];
-    result.coaches[key] = {
-      name: cfg.coaches[key].name,
-      busy: (cal && cal.busy) ? cal.busy : [],
-      errors: (cal && cal.errors) ? cal.errors : undefined,
-    };
-  }
-
   return jsonResponse(result);
 }
 
 // ============================================================
-// Booking request — create pending hold + send confirm email
+// Court booking request — create pending hold + send confirm email
 // ============================================================
 
 function handleBookingRequest(body) {
@@ -596,11 +639,6 @@ function handleBookingRequest(body) {
     return jsonResponse({ error: GENERIC }, 400);
   }
 
-  // Validate coach allow-list if provided
-  if (body.coachId && !cfg.coaches[body.coachId]) {
-    return jsonResponse({ error: GENERIC }, 400);
-  }
-
   // Rate limit BEFORE any side effect (no email sent on reject)
   const rl = checkRateLimit(String(body.email).trim());
   if (!rl.ok) {
@@ -621,12 +659,7 @@ function handleBookingRequest(body) {
   endDate.setHours(endDate.getHours() + durationHours);
 
   // Quick conflict check before creating pending hold
-  const calendarsToCheck = [cfg.courts[body.courtId]];
-  if (body.coachId) {
-    calendarsToCheck.push(cfg.coaches[body.coachId].id);
-  }
-
-  const conflict = checkConflict(calendarsToCheck, startDate, endDate);
+  const conflict = checkConflict([cfg.courts[body.courtId]], startDate, endDate);
   if (conflict) {
     return jsonResponse({ error: 'This slot was just booked by someone else. Please pick another.' }, 409);
   }
@@ -639,7 +672,6 @@ function handleBookingRequest(body) {
     startHour: startHour,
     durationHours: durationHours,
     courtId: body.courtId,
-    coachId: body.coachId || null,
     name: body.name,
     email: body.email,
     phone: body.phone || '',
@@ -661,16 +693,12 @@ function handleBookingRequest(body) {
 
   const subject = tr(lang, 'confirmSubject', { date: friendlyDate, time: timeStr });
   const courtLabel = tr(lang, 'court') + ' ' + body.courtId;
-  const coachLabel = body.coachId ? cfg.coaches[body.coachId].name : '';
 
   let emailBody = tr(lang, 'hi') + ' ' + body.name + ',\n\n';
   emailBody += tr(lang, 'confirmIntro') + '\n\n';
   emailBody += tr(lang, 'date') + ': ' + friendlyDate + '\n';
   emailBody += tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr + '\n';
   emailBody += courtLabel + '\n';
-  if (coachLabel) {
-    emailBody += tr(lang, 'coach') + ': ' + coachLabel + '\n';
-  }
   emailBody += '\n' + tr(lang, 'clickToConfirm') + '\n' + confirmUrl + '\n\n';
   emailBody += tr(lang, 'expiresIn', { n: cfg.pendingTtlMinutes }) + '\n\n';
   emailBody += '— ' + cfg.siteName;
@@ -681,7 +709,100 @@ function handleBookingRequest(body) {
 }
 
 // ============================================================
-// Confirm — finalize the booking
+// Training request — create pending hold + send confirm email
+// ============================================================
+// Training requests are intentionally NOT availability-checked and
+// NOT written to any calendar. A coach calls the client back from
+// the admin email/task and manually creates the event on the court
+// calendar if they agree to take the training.
+
+function handleTrainingRequest(body) {
+  const GENERIC = 'Invalid training request.';
+
+  // Required fields
+  const required = ['name', 'phone', 'email'];
+  for (const field of required) {
+    if (body[field] === undefined || body[field] === null || String(body[field]).trim() === '') {
+      return jsonResponse({ error: GENERIC }, 400);
+    }
+  }
+
+  const name = String(body.name).trim();
+  if (name.length === 0 || name.length > 120) {
+    return jsonResponse({ error: GENERIC }, 400);
+  }
+
+  if (!isValidEmail(String(body.email).trim())) {
+    return jsonResponse({ error: GENERIC }, 400);
+  }
+
+  const phone = String(body.phone).trim();
+  if (phone.length === 0 || phone.length > 40) {
+    return jsonResponse({ error: GENERIC }, 400);
+  }
+
+  // Validate pill-selector values against allow-lists. Missing = accepted
+  // (treated as unspecified), but any non-empty value must be in the list.
+  const LEVEL_ALLOWED   = ['beginner', 'intermediate', 'advanced'];
+  const RACKETS_ALLOWED = ['have', 'borrow'];
+  const GROUP_ALLOWED   = ['solo', 'partner', 'family', 'kids'];
+  const level   = body.level   ? String(body.level).toLowerCase()   : '';
+  const rackets = body.rackets ? String(body.rackets).toLowerCase() : '';
+  const group   = body.group   ? String(body.group).toLowerCase()   : '';
+  if (level   && LEVEL_ALLOWED.indexOf(level)     === -1) return jsonResponse({ error: GENERIC }, 400);
+  if (rackets && RACKETS_ALLOWED.indexOf(rackets) === -1) return jsonResponse({ error: GENERIC }, 400);
+  if (group   && GROUP_ALLOWED.indexOf(group)     === -1) return jsonResponse({ error: GENERIC }, 400);
+
+  const notes = body.notes ? String(body.notes).slice(0, 2000) : '';
+
+  // Normalize language
+  const requestedLang = String(body.language || '').toLowerCase();
+  const language = I18N[requestedLang] ? requestedLang : 'en';
+
+  // Rate limit by email
+  const rl = checkRateLimit(String(body.email).trim());
+  if (!rl.ok) {
+    return jsonResponse({ error: rl.reason }, 429);
+  }
+
+  const cfg = getSettings();
+  const token = Utilities.getUuid();
+  const pending = {
+    token: token,
+    kind: 'training',
+    name: name,
+    phone: phone,
+    email: String(body.email).trim(),
+    level: level,
+    rackets: rackets,
+    group: group,
+    notes: notes,
+    language: language,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + cfg.pendingTtlMinutes * 60 * 1000).toISOString(),
+  };
+
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('pendingTraining_' + token, JSON.stringify(pending));
+
+  // Send confirmation email (in client's chosen language)
+  const scriptUrl = ScriptApp.getService().getUrl();
+  const confirmUrl = scriptUrl + '?confirmTraining=' + token;
+
+  const subject = tr(language, 'trConfirmSubject');
+  let emailBody = tr(language, 'hi') + ' ' + name + ',\n\n';
+  emailBody += tr(language, 'trConfirmIntro') + '\n\n';
+  emailBody += confirmUrl + '\n\n';
+  emailBody += tr(language, 'expiresIn', { n: cfg.pendingTtlMinutes }) + '\n\n';
+  emailBody += '— ' + cfg.siteName;
+
+  GmailApp.sendEmail(pending.email, subject, emailBody);
+
+  return jsonResponse({ status: 'pending', message: 'Check your email to confirm the request.' });
+}
+
+// ============================================================
+// Confirm a court booking — finalize the booking
 // ============================================================
 
 function handleConfirm(token) {
@@ -707,34 +828,24 @@ function handleConfirm(token) {
   endDate.setHours(endDate.getHours() + pending.durationHours);
 
   // Final conflict check
-  const calendarsToCheck = [cfg.courts[pending.courtId]];
-  if (pending.coachId) {
-    calendarsToCheck.push(cfg.coaches[pending.coachId].id);
-  }
-
-  const conflict = checkConflict(calendarsToCheck, startDate, endDate);
+  const conflict = checkConflict([cfg.courts[pending.courtId]], startDate, endDate);
   if (conflict) {
     props.deleteProperty('pending_' + token);
     return htmlResponse('Slot no longer available',
       'Sorry, this slot was just booked by someone else. Please go back and pick another time.');
   }
 
-  // Create calendar event(s)
+  // Create calendar event
   const timeStr = padHour(pending.startHour) + ':00';
   const endTimeStr = padHour(pending.startHour + pending.durationHours) + ':00';
   const courtLabel = 'Court ' + pending.courtId;
-  const coachLabel = pending.coachId ? cfg.coaches[pending.coachId].name : null;
-
-  let eventTitle = coachLabel
-    ? coachLabel + ', ' + courtLabel + ' — ' + pending.name
-    : courtLabel + ' — ' + pending.name;
+  const eventTitle = courtLabel + ' — ' + pending.name;
 
   const eventDescription = [
     'Booked by: ' + pending.name,
     'Email: ' + pending.email,
     pending.phone ? 'Phone: ' + pending.phone : '',
     courtLabel,
-    coachLabel ? 'Coach: ' + coachLabel : '',
     'Time: ' + timeStr + ' – ' + endTimeStr,
   ].filter(Boolean).join('\n');
 
@@ -759,34 +870,13 @@ function handleConfirm(token) {
   // CalendarApp uses "<id>@google.com" form for getEventById, so store that form.
   const courtEventId = createdCourtEvent.id + '@google.com';
 
-  // If coach booking, also create event on coach calendar (no guest / no invite).
-  let coachEventId = null;
-  if (pending.coachId) {
-    const coachCalId = cfg.coaches[pending.coachId].id;
-    const coachResource = {
-      summary: eventTitle,
-      description: eventDescription,
-      start: { dateTime: startDate.toISOString(), timeZone: cfg.timezone },
-      end: { dateTime: endDate.toISOString(), timeZone: cfg.timezone },
-      conferenceData: null,
-      reminders: { useDefault: true },
-    };
-    const createdCoachEvent = Calendar.Events.insert(
-      coachResource, coachCalId,
-      { sendUpdates: 'none', conferenceDataVersion: 1 }
-    );
-    coachEventId = createdCoachEvent.id + '@google.com';
-  }
-
   // Store confirmed booking info (for cancellation and reminders)
   const cancelToken = Utilities.getUuid();
   const confirmed = {
     cancelToken: cancelToken,
     confirmToken: token,
     courtEventId: courtEventId,
-    coachEventId: coachEventId,
     courtId: pending.courtId,
-    coachId: pending.coachId,
     name: pending.name,
     email: pending.email,
     phone: pending.phone,
@@ -807,10 +897,7 @@ function handleConfirm(token) {
   // Schedule reminder triggers
   scheduleReminders(cancelToken, startDate);
 
-  // Generate .ics content
-  const icsContent = generateIcs(pending, startDate, endDate, cancelToken);
-
-  // Send confirmation email with .ics (in the client's chosen language)
+  // Send confirmation email (in the client's chosen language)
   const lang = pending.language;
   const scriptUrl = ScriptApp.getService().getUrl();
   const cancelUrl = scriptUrl + '?cancel=' + cancelToken;
@@ -823,16 +910,13 @@ function handleConfirm(token) {
   emailBody += tr(lang, 'date') + ': ' + friendlyDate + '\n';
   emailBody += tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr + '\n';
   emailBody += localCourtLabel + '\n';
-  if (coachLabel) {
-    emailBody += tr(lang, 'coach') + ': ' + coachLabel + '\n';
-  }
   emailBody += '\n' + tr(lang, 'inviteNote') + '\n\n';
   emailBody += tr(lang, 'needCancel') + '\n' + cancelUrl + '\n\n';
   emailBody += '— ' + cfg.siteName;
 
   GmailApp.sendEmail(pending.email, subject, emailBody);
 
-  // Notify admin(s) — and optionally the specific coach.
+  // Notify admin(s).
   notifyAdmins(cfg, pending, 'created');
 
   return htmlResponse(
@@ -848,7 +932,87 @@ function handleConfirm(token) {
 }
 
 // ============================================================
-// Cancel — delete events and triggers
+// Confirm a training request — create Google Task + email admins
+// ============================================================
+
+function handleConfirmTraining(token) {
+  const cfg = getSettings();
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty('pendingTraining_' + token);
+
+  if (!raw) {
+    return htmlResponse('Request not found', 'This confirmation link is invalid or has expired.');
+  }
+
+  const pending = JSON.parse(raw);
+
+  if (new Date() > new Date(pending.expiresAt)) {
+    props.deleteProperty('pendingTraining_' + token);
+    return htmlResponse('Link expired', 'This confirmation link has expired. Please submit your request again.');
+  }
+
+  // Create Google Task. Wrapped in try/catch because if the Tasks advanced
+  // service isn't enabled in the script project yet, the `Tasks` global
+  // won't exist and would throw ReferenceError — we don't want that to
+  // break the admin email, which is the backup channel.
+  try {
+    createTrainingTask(pending);
+  } catch (err) {
+    Logger.log('Could not create Google Task (Tasks advanced service not enabled?): ' + err.message);
+  }
+
+  // Notify admins by email (backup channel).
+  notifyAdminsTraining(cfg, pending);
+
+  // Remove pending hold
+  props.deleteProperty('pendingTraining_' + token);
+
+  const lang = pending.language || 'en';
+  return htmlResponse(
+    tr(lang, 'trHtmlConfirmedTitle'),
+    tr(lang, 'trHtmlConfirmedBody', {
+      name: htmlEscape(pending.name),
+      phone: htmlEscape(pending.phone),
+      url: htmlEscape(cfg.siteUrl),
+      site: htmlEscape(cfg.siteName),
+    })
+  );
+}
+
+// Create a task in bookmeridiana@gmail.com's default task list.
+// Requires the "Tasks" advanced Google service to be enabled in the
+// script project (appsscript.json declares it; the editor prompts
+// for consent on first deploy).
+function createTrainingTask(pending) {
+  // Only the date portion of `due` is displayed in Google Tasks — time
+  // is discarded. Setting it to today makes the task show up as
+  // today's todo item for the coaches.
+  const today = new Date();
+  const dueIso = today.toISOString();
+
+  const title = 'Training request: ' + pending.name + (pending.phone ? ' — ' + pending.phone : '');
+  const notes = buildTrainingNotes(pending);
+
+  const task = { title: title, notes: notes, due: dueIso };
+  Tasks.Tasks.insert(task, '@default');
+}
+
+function buildTrainingNotes(pending) {
+  const lines = [];
+  lines.push('Name: ' + pending.name);
+  lines.push('Phone: ' + pending.phone);
+  lines.push('Email: ' + pending.email);
+  if (pending.level)   lines.push('Level: ' + pending.level);
+  if (pending.rackets) lines.push('Rackets: ' + pending.rackets);
+  if (pending.group)   lines.push('Group: ' + pending.group);
+  if (pending.notes)   lines.push('Notes: ' + pending.notes);
+  lines.push('Language: ' + (pending.language || 'en'));
+  lines.push('Submitted: ' + pending.createdAt);
+  return lines.join('\n');
+}
+
+// ============================================================
+// Cancel — delete court event and triggers
 // ============================================================
 
 function handleCancel(cancelToken) {
@@ -871,17 +1035,6 @@ function handleCancel(cancelToken) {
     Logger.log('Error deleting court event: ' + err.message);
   }
 
-  // Delete coach event if applicable
-  if (booking.coachEventId) {
-    try {
-      const coachCal = CalendarApp.getCalendarById(cfg.coaches[booking.coachId].id);
-      const coachEvent = coachCal.getEventById(booking.coachEventId);
-      if (coachEvent) coachEvent.deleteEvent();
-    } catch (err) {
-      Logger.log('Error deleting coach event: ' + err.message);
-    }
-  }
-
   // Delete scheduled reminder triggers
   deleteReminders(cancelToken);
 
@@ -892,7 +1045,6 @@ function handleCancel(cancelToken) {
   const timeStr = padHour(booking.startHour) + ':00';
   const endTimeStr = padHour(booking.startHour + booking.durationHours) + ':00';
   const courtLabel = tr(lang, 'court') + ' ' + booking.courtId;
-  const coachLabel = booking.coachId ? cfg.coaches[booking.coachId].name : null;
 
   const subject = tr(lang, 'cancelledSubject', { date: friendlyDate, time: timeStr });
   let emailBody = tr(lang, 'hi') + ' ' + booking.name + ',\n\n';
@@ -900,15 +1052,12 @@ function handleCancel(cancelToken) {
   emailBody += tr(lang, 'date') + ': ' + friendlyDate + '\n';
   emailBody += tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr + '\n';
   emailBody += courtLabel + '\n';
-  if (coachLabel) {
-    emailBody += tr(lang, 'coach') + ': ' + coachLabel + '\n';
-  }
   emailBody += '\n' + tr(lang, 'bookAgain') + '\n' + cfg.siteUrl + '\n\n';
   emailBody += '— ' + cfg.siteName;
 
   GmailApp.sendEmail(booking.email, subject, emailBody);
 
-  // Notify admin(s) — and optionally the specific coach.
+  // Notify admin(s).
   notifyAdmins(cfg, booking, 'cancelled');
 
   // Clean up properties
@@ -1000,7 +1149,6 @@ function fireReminder(e) {
   const timeStr = padHour(booking.startHour) + ':00';
   const endTimeStr = padHour(booking.startHour + booking.durationHours) + ':00';
   const courtLabel = tr(lang, 'court') + ' ' + booking.courtId;
-  const coachLabel = booking.coachId ? cfg.coaches[booking.coachId].name : null;
 
   const scriptUrl = ScriptApp.getService().getUrl();
   const cancelUrl = scriptUrl + '?cancel=' + triggerInfo.cancelToken;
@@ -1014,9 +1162,6 @@ function fireReminder(e) {
   emailBody += tr(lang, 'date') + ': ' + friendlyDate + '\n';
   emailBody += tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr + '\n';
   emailBody += courtLabel + '\n';
-  if (coachLabel) {
-    emailBody += tr(lang, 'coach') + ': ' + coachLabel + '\n';
-  }
   emailBody += '\n' + tr(lang, 'needCancel') + '\n' + cancelUrl + '\n\n';
   emailBody += tr(lang, 'seeYou') + '\n\n';
   emailBody += '— ' + cfg.siteName;
@@ -1076,50 +1221,6 @@ function checkConflict(calendarIds, startDate, endDate) {
 }
 
 // ============================================================
-// .ics generation
-// ============================================================
-
-function generateIcs(booking, startDate, endDate, cancelToken) {
-  const cfg = getSettings();
-  const scriptUrl = ScriptApp.getService().getUrl();
-  const cancelUrl = scriptUrl + '?cancel=' + cancelToken;
-  const courtLabel = 'Court ' + booking.courtId;
-  const coachLabel = booking.coachId ? cfg.coaches[booking.coachId].name : null;
-
-  const uid = Utilities.getUuid() + '@tenniskosmos';
-  const now = formatIcsDate(new Date());
-  const dtStart = formatIcsDate(startDate);
-  const dtEnd = formatIcsDate(endDate);
-
-  let description = courtLabel;
-  if (coachLabel) {
-    description += '\\nCoach: ' + coachLabel;
-  }
-  description += '\\nCancel: ' + cancelUrl;
-
-  let ics = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//TennisKosmos//Tennis//EN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
-    'BEGIN:VEVENT',
-    'UID:' + uid,
-    'DTSTAMP:' + now,
-    'DTSTART;TZID=Europe/Belgrade:' + dtStart,
-    'DTEND;TZID=Europe/Belgrade:' + dtEnd,
-    'SUMMARY:' + icsEscape((coachLabel ? coachLabel + ', ' : '') + courtLabel + ' — ' + booking.name),
-    'DESCRIPTION:' + description,
-    'LOCATION:' + cfg.siteName,
-    'STATUS:CONFIRMED',
-    'END:VEVENT',
-    'END:VCALENDAR',
-  ].join('\r\n');
-
-  return ics;
-}
-
-// ============================================================
 // Helpers
 // ============================================================
 
@@ -1127,39 +1228,9 @@ function padHour(h) {
   return String(h).padStart(2, '0');
 }
 
-function icsEscape(s) {
-  // RFC 5545 TEXT escaping: backslash, semicolon, comma, newline.
-  return String(s == null ? '' : s)
-    .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,')
-    .replace(/\r?\n/g, '\\n');
-}
-
-function formatFriendlyDate(date) {
-  // Returns e.g. "Sun 12 Apr"
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return days[date.getDay()] + ' ' + date.getDate() + ' ' + months[date.getMonth()];
-}
-
-function formatIcsDate(date) {
-  // Returns e.g. "20260412T140000"
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  const hh = String(date.getHours()).padStart(2, '0');
-  const mm = String(date.getMinutes()).padStart(2, '0');
-  const ss = String(date.getSeconds()).padStart(2, '0');
-  return y + m + d + 'T' + hh + mm + ss;
-}
-
-// Send booking notification to admin(s). kind is 'created' or 'cancelled'.
-// Recipients come from settings.adminNotifications.emails, plus — when
-// coachGetsOwnBookings is true and the booking is a coach booking — the
-// specific coach's email. Errors are swallowed so a notify failure never
-// breaks the client-facing booking/cancel flow.
+// Send court-booking notification to admin(s). kind is 'created' or 'cancelled'.
+// Recipients come from settings.adminNotifications.emails. Errors are swallowed
+// so a notify failure never breaks the client-facing booking/cancel flow.
 function notifyAdmins(cfg, booking, kind) {
   try {
     const notif = (cfg && cfg.adminNotifications) || {};
@@ -1168,11 +1239,6 @@ function notifyAdmins(cfg, booking, kind) {
       for (const e of notif.emails) {
         if (e && typeof e === 'string') recipients.push(e);
       }
-    }
-    if (notif.coachGetsOwnBookings && booking.coachId
-        && cfg.coaches && cfg.coaches[booking.coachId]
-        && cfg.coaches[booking.coachId].email) {
-      recipients.push(cfg.coaches[booking.coachId].email);
     }
 
     // Dedupe (case-insensitive).
@@ -1186,21 +1252,16 @@ function notifyAdmins(cfg, booking, kind) {
 
     const timeStr = padHour(booking.startHour) + ':00';
     const endTimeStr = padHour(booking.startHour + booking.durationHours) + ':00';
-    const coachLabel = booking.coachId && cfg.coaches && cfg.coaches[booking.coachId]
-      ? cfg.coaches[booking.coachId].name
-      : null;
     const courtLabel = 'Court ' + booking.courtId;
     const verb = kind === 'cancelled' ? 'CANCELLED' : 'NEW BOOKING';
 
     const subject = '[' + cfg.siteName + '] ' + verb + ': '
-      + booking.date + ' ' + timeStr + ' — ' + courtLabel
-      + (coachLabel ? ' / ' + coachLabel : '');
+      + booking.date + ' ' + timeStr + ' — ' + courtLabel;
 
     let body = verb + '\n\n';
     body += 'Date: ' + booking.date + '\n';
     body += 'Time: ' + timeStr + ' – ' + endTimeStr + '\n';
     body += courtLabel + '\n';
-    if (coachLabel) body += 'Coach: ' + coachLabel + '\n';
     body += '\nClient: ' + booking.name + '\n';
     body += 'Email: ' + booking.email + '\n';
     if (booking.phone) body += 'Phone: ' + booking.phone + '\n';
@@ -1209,6 +1270,47 @@ function notifyAdmins(cfg, booking, kind) {
     GmailApp.sendEmail(unique.join(','), subject, body);
   } catch (err) {
     Logger.log('notifyAdmins error: ' + err.message);
+  }
+}
+
+// Send training-request notification to admin(s). Sent once, on confirm.
+// Errors are swallowed so a notify failure never breaks the client flow.
+function notifyAdminsTraining(cfg, req) {
+  try {
+    const notif = (cfg && cfg.adminNotifications) || {};
+    const recipients = [];
+    if (Array.isArray(notif.emails)) {
+      for (const e of notif.emails) {
+        if (e && typeof e === 'string') recipients.push(e);
+      }
+    }
+    const seen = {};
+    const unique = [];
+    for (const e of recipients) {
+      const key = e.toLowerCase();
+      if (!seen[key]) { seen[key] = true; unique.push(e); }
+    }
+    if (unique.length === 0) return;
+
+    const subject = '[' + cfg.siteName + '] TRAINING REQUEST: '
+      + req.name + ' — ' + req.phone;
+
+    let body = 'NEW TRAINING REQUEST\n\n';
+    body += 'Call this person back.\n\n';
+    body += 'Name: '   + req.name  + '\n';
+    body += 'Phone: '  + req.phone + '\n';
+    body += 'Email: '  + req.email + '\n';
+    if (req.level)   body += 'Level: '   + req.level   + '\n';
+    if (req.rackets) body += 'Rackets: ' + req.rackets + '\n';
+    if (req.group)   body += 'Group: '   + req.group   + '\n';
+    if (req.notes)   body += '\nNotes:\n' + req.notes + '\n';
+    body += '\nLanguage: '  + (req.language || 'en') + '\n';
+    body += 'Submitted: ' + req.createdAt + '\n';
+    body += '\n— ' + cfg.siteName;
+
+    GmailApp.sendEmail(unique.join(','), subject, body);
+  } catch (err) {
+    Logger.log('notifyAdminsTraining error: ' + err.message);
   }
 }
 
