@@ -1160,6 +1160,43 @@ function fireReminder(e) {
   }
 
   const booking = JSON.parse(bookingRaw);
+
+  // Verify the court calendar event still exists. Coaches sometimes
+  // delete a booking directly in Google Calendar (e.g. the client
+  // phoned to cancel), bypassing our cancellation link. Without this
+  // check, reminders would fire for a phantom booking — annoying for
+  // the client and a waste of the 100/day Gmail quota.
+  //
+  // On a transient API error we send anyway: missing a real reminder
+  // is worse than sending one for a deleted event.
+  let eventExists = true;
+  try {
+    const courtCal = CalendarApp.getCalendarById(cfg.courts[booking.courtId]);
+    if (!courtCal) {
+      eventExists = false;
+    } else {
+      const courtEvent = courtCal.getEventById(booking.courtEventId);
+      eventExists = !!courtEvent;
+    }
+  } catch (err) {
+    Logger.log('fireReminder: error checking event existence — sending reminder anyway: ' + err.message);
+    eventExists = true;
+  }
+
+  if (!eventExists) {
+    Logger.log('Calendar event for booking ' + triggerInfo.cancelToken
+      + ' was deleted directly in Google Calendar — skipping reminder and cleaning up all records/triggers.');
+    // Drop both reminder triggers (this one and the sibling) plus the
+    // confirmed record and cancel_lookup index — same cleanup as
+    // handleCancel, minus the emails.
+    deleteReminders(triggerInfo.cancelToken);
+    props.deleteProperty('confirmed_' + triggerInfo.cancelToken);
+    if (booking.confirmToken) {
+      props.deleteProperty('cancel_lookup_' + booking.confirmToken);
+    }
+    return;
+  }
+
   const lang = booking.language || 'en';
   const startDate = new Date(booking.date + 'T' + padHour(booking.startHour) + ':00:00');
   const friendlyDate = formatFriendlyDateLang(startDate, lang);
