@@ -1178,26 +1178,45 @@ function fireReminder(e) {
 
   const booking = JSON.parse(bookingRaw);
 
-  // Verify the court calendar event still exists. Coaches sometimes
-  // delete a booking directly in Google Calendar (e.g. the client
-  // phoned to cancel), bypassing our cancellation link. Without this
-  // check, reminders would fire for a phantom booking — annoying for
-  // the client and a waste of the 100/day Gmail quota.
+  // Verify the court calendar event still exists AND is not cancelled.
+  // Coaches sometimes delete a booking directly in Google Calendar
+  // (e.g. the client phoned to cancel), bypassing our cancellation
+  // link. Without this check, reminders would fire for a phantom
+  // booking — annoying for the client and a waste of the 100/day
+  // Gmail quota.
   //
-  // On a transient API error we send anyway: missing a real reminder
-  // is worse than sending one for a deleted event.
+  // We deliberately use the Advanced Calendar API (Calendar.Events.get)
+  // rather than CalendarApp.getEventById, because:
+  //   - Our bookings always have an attendee (the client). When the
+  //     organizer deletes such an event, Google marks it status:
+  //     'cancelled' rather than hard-deleting it (so attendees can
+  //     still be notified).
+  //   - CalendarApp.getEventById returns these cancelled events as
+  //     non-null objects, which makes a !!courtEvent check unreliable.
+  //   - Calendar.Events.get exposes the status field, and throws 404
+  //     for true hard-deletes — both of which we treat as "gone".
+  //
+  // On any other (transient) error we send the reminder anyway: missing
+  // a real reminder is worse than sending one for a deleted event.
+  const calId = cfg.courts[booking.courtId];
+  // courtEventId is stored in the "<id>@google.com" form CalendarApp
+  // expects; the Advanced API wants the bare id, so strip the suffix.
+  const advancedEventId = String(booking.courtEventId).replace(/@google\.com$/, '');
   let eventExists = true;
   try {
-    const courtCal = CalendarApp.getCalendarById(cfg.courts[booking.courtId]);
-    if (!courtCal) {
+    const event = Calendar.Events.get(calId, advancedEventId);
+    if (!event || event.status === 'cancelled') {
       eventExists = false;
-    } else {
-      const courtEvent = courtCal.getEventById(booking.courtEventId);
-      eventExists = !!courtEvent;
     }
   } catch (err) {
-    Logger.log('fireReminder: error checking event existence — sending reminder anyway: ' + err.message);
-    eventExists = true;
+    const msg = String((err && (err.message || err)) || '');
+    if (/Not Found/i.test(msg) || /\b404\b/.test(msg)) {
+      // Hard-deleted — treat as not exists.
+      eventExists = false;
+    } else {
+      Logger.log('fireReminder: error checking event existence — sending reminder anyway: ' + msg);
+      eventExists = true;
+    }
   }
 
   if (!eventExists) {
