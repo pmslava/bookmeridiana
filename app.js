@@ -211,8 +211,48 @@
 
     currentLang = config.defaultLanguage || 'sr';
 
+    applySiteNames();
     renderShell();
     loadAvailability();
+  }
+
+  // Apply the four independently-configurable names from settings:
+  // titleName (browser tab), heroName (big headline), footerName (rendered
+  // in renderShell), emailName (backend-only). Each falls back to siteName
+  // when blank, matching the helpers in Code.gs.
+  function applySiteNames() {
+    const base = config.siteName || 'Tennis Kosmos';
+    const titleName = config.titleName || base;
+    const heroName  = config.heroName  || base;
+
+    // Preserve any existing " — subtitle" suffix already in <title>.
+    const currentTitle = document.title || '';
+    const sepIdx = currentTitle.indexOf(' — ');
+    const suffix = sepIdx >= 0 ? currentTitle.slice(sepIdx) : '';
+    document.title = titleName + suffix;
+
+    // Hero H1: first word stays wrapped in .accent, rest in plain text.
+    // If heroName is a single word, the whole thing is accented.
+    const h1 = document.querySelector('.hero h1');
+    if (h1) {
+      const parts = heroName.trim().split(/\s+/);
+      if (parts.length <= 1) {
+        h1.innerHTML = `<span class="accent">${escapeHtml(heroName)}</span>`;
+      } else {
+        const first = parts[0];
+        const rest = parts.slice(1).join(' ');
+        h1.innerHTML = `<span class="accent">${escapeHtml(first)}</span> ${escapeHtml(rest)}`;
+      }
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   // ---- Fetch availability from Apps Script ----
@@ -423,7 +463,7 @@
           <line x1="40" y1="50" x2="160" y2="50" stroke="white" stroke-width="1"/>
         </svg>
         <div class="footer-content">
-          <div class="footer-name">${config.siteName || 'Tennis Kosmos'}</div>
+          <div class="footer-name">${config.footerName || config.siteName || 'Tennis Kosmos'}</div>
           <div class="footer-info">
             ${c.address ? c.address + '<br>' : ''}
             ${c.email ? '<a href="mailto:' + c.email + '">' + c.email + '</a><br>' : ''}

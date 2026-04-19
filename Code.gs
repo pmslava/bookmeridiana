@@ -51,6 +51,15 @@ function setAdminEmail(email) {
 // haven't been seeded yet. Never referenced by the booking logic.
 const FALLBACK_SITE_NAME = 'Tennis Kosmos';
 
+// Each of these four names can be set independently from the admin page,
+// so the friend can show a friendly brand in the page title / hero but a
+// formal legal name in the footer / email subjects (or any mix). Any empty
+// override falls back to siteName, which itself falls back to FALLBACK_SITE_NAME.
+function titleNameOf_(cfg)  { return (cfg && cfg.titleName)  || (cfg && cfg.siteName) || FALLBACK_SITE_NAME; }
+function heroNameOf_(cfg)   { return (cfg && cfg.heroName)   || (cfg && cfg.siteName) || FALLBACK_SITE_NAME; }
+function footerNameOf_(cfg) { return (cfg && cfg.footerName) || (cfg && cfg.siteName) || FALLBACK_SITE_NAME; }
+function emailNameOf_(cfg)  { return (cfg && cfg.emailName)  || (cfg && cfg.siteName) || FALLBACK_SITE_NAME; }
+
 // ============================================================
 // Settings — Script Properties is the single source of truth.
 // ============================================================
@@ -74,6 +83,10 @@ function publicSettings(full) {
   }
   return {
     siteName: full.siteName,
+    titleName: full.titleName,
+    heroName: full.heroName,
+    footerName: full.footerName,
+    emailName: full.emailName,
     timezone: full.timezone,
     daysAhead: full.daysAhead,
     slotLengthMinutes: full.slotLengthMinutes,
@@ -103,6 +116,10 @@ function setupInitialSettings() {
   }
   const seed = {
     siteName: 'Tennis Kosmos',
+    titleName: '',
+    heroName: '',
+    footerName: '',
+    emailName: '',
     timezone: 'Europe/Belgrade',
     siteUrl: 'https://teniskosmos.com/',
     daysAhead: 10,
@@ -700,7 +717,7 @@ function handleBookingRequest(body) {
   emailBody += courtLabel + '\n';
   emailBody += '\n' + tr(lang, 'clickToConfirm') + '\n' + confirmUrl + '\n\n';
   emailBody += tr(lang, 'expiresIn', { n: cfg.pendingTtlMinutes }) + '\n\n';
-  emailBody += '— ' + cfg.siteName;
+  emailBody += '— ' + emailNameOf_(cfg);
 
   MailApp.sendEmail(body.email, subject, emailBody);
 
@@ -793,7 +810,7 @@ function handleTrainingRequest(body) {
   emailBody += tr(language, 'trConfirmIntro') + '\n\n';
   emailBody += confirmUrl + '\n\n';
   emailBody += tr(language, 'expiresIn', { n: cfg.pendingTtlMinutes }) + '\n\n';
-  emailBody += '— ' + cfg.siteName;
+  emailBody += '— ' + emailNameOf_(cfg);
 
   MailApp.sendEmail(pending.email, subject, emailBody);
 
@@ -911,7 +928,7 @@ function handleConfirm(token) {
   emailBody += localCourtLabel + '\n';
   emailBody += '\n' + tr(lang, 'inviteNote') + '\n\n';
   emailBody += tr(lang, 'needCancel') + '\n' + cancelUrl + '\n\n';
-  emailBody += '— ' + cfg.siteName;
+  emailBody += '— ' + emailNameOf_(cfg);
 
   MailApp.sendEmail(pending.email, subject, emailBody);
 
@@ -925,7 +942,7 @@ function handleConfirm(token) {
       time: htmlEscape(timeStr),
       email: htmlEscape(pending.email),
       url: htmlEscape(cfg.siteUrl),
-      site: htmlEscape(cfg.siteName),
+      site: htmlEscape(heroNameOf_(cfg)),
     })
   );
 }
@@ -974,7 +991,7 @@ function handleConfirmTraining(token) {
       name: htmlEscape(pending.name),
       phone: htmlEscape(pending.phone),
       url: htmlEscape(cfg.siteUrl),
-      site: htmlEscape(cfg.siteName),
+      site: htmlEscape(heroNameOf_(cfg)),
     })
   );
 }
@@ -1070,7 +1087,7 @@ function handleCancel(cancelToken) {
   emailBody += tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr + '\n';
   emailBody += courtLabel + '\n';
   emailBody += '\n' + tr(lang, 'bookAgain') + '\n' + cfg.siteUrl + '\n\n';
-  emailBody += '— ' + cfg.siteName;
+  emailBody += '— ' + emailNameOf_(cfg);
 
   MailApp.sendEmail(booking.email, subject, emailBody);
 
@@ -1218,7 +1235,7 @@ function fireReminder(e) {
   emailBody += courtLabel + '\n';
   emailBody += '\n' + tr(lang, 'needCancel') + '\n' + cancelUrl + '\n\n';
   emailBody += tr(lang, 'seeYou') + '\n\n';
-  emailBody += '— ' + cfg.siteName;
+  emailBody += '— ' + emailNameOf_(cfg);
 
   MailApp.sendEmail(booking.email, subject, emailBody);
 
@@ -1309,7 +1326,7 @@ function notifyAdmins(cfg, booking, kind) {
     const courtLabel = 'Court ' + booking.courtId;
     const verb = kind === 'cancelled' ? 'CANCELLED' : 'NEW BOOKING';
 
-    const subject = '[' + cfg.siteName + '] ' + verb + ': '
+    const subject = '[' + emailNameOf_(cfg) + '] ' + verb + ': '
       + booking.date + ' ' + timeStr + ' — ' + courtLabel;
 
     let body = verb + '\n\n';
@@ -1319,7 +1336,7 @@ function notifyAdmins(cfg, booking, kind) {
     body += '\nClient: ' + booking.name + '\n';
     body += 'Email: ' + booking.email + '\n';
     if (booking.phone) body += 'Phone: ' + booking.phone + '\n';
-    body += '\n— ' + cfg.siteName;
+    body += '\n— ' + emailNameOf_(cfg);
 
     MailApp.sendEmail(unique.join(','), subject, body);
   } catch (err) {
@@ -1346,7 +1363,7 @@ function notifyAdminsTraining(cfg, req) {
     }
     if (unique.length === 0) return;
 
-    const subject = '[' + cfg.siteName + '] TRAINING REQUEST: '
+    const subject = '[' + emailNameOf_(cfg) + '] TRAINING REQUEST: '
       + req.name + ' — ' + req.phone;
 
     let body = 'NEW TRAINING REQUEST\n\n';
@@ -1360,7 +1377,7 @@ function notifyAdminsTraining(cfg, req) {
     if (req.notes)   body += '\nNotes:\n' + req.notes + '\n';
     body += '\nLanguage: '  + (req.language || 'en') + '\n';
     body += 'Submitted: ' + req.createdAt + '\n';
-    body += '\n— ' + cfg.siteName;
+    body += '\n— ' + emailNameOf_(cfg);
 
     MailApp.sendEmail(unique.join(','), subject, body);
   } catch (err) {
@@ -1379,7 +1396,7 @@ function htmlResponse(title, body) {
   let siteName = FALLBACK_SITE_NAME;
   try {
     const cfg = getSettings();
-    if (cfg && cfg.siteName) siteName = cfg.siteName;
+    siteName = titleNameOf_(cfg);
   } catch (e) { /* settings not initialized — use fallback */ }
 
   const html = '<!DOCTYPE html><html><head><meta charset="utf-8">'
