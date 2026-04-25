@@ -735,6 +735,29 @@ body {
   color: var(--accent);
 }
 
+.footer-map {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 0.4rem;
+}
+
+.footer-map-pin {
+  display: inline-flex;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.footer-map-addr {
+  color: var(--text-muted);
+}
+
+.footer-map-sep {
+  color: var(--text-muted);
+}
+
 /* ---- Tennis ball divider ---- */
 .ball-divider {
   text-align: center;

@@ -145,6 +145,7 @@ function setupInitialSettings() {
       phone: '',
       email: '',
       address: '',
+      googleMapsUrl: '',
       instagram: '',
     },
     languages: ['en', 'sr', 'ru'],
@@ -285,7 +286,7 @@ const I18N = {
   en: {
     dayNames: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
     monthNames: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
-    hi: 'Hi', date: 'Date', time: 'Time', court: 'Court',
+    hi: 'Hi', date: 'Date', time: 'Time', court: 'Court', findUs: 'Find us',
     confirmSubject: 'Confirm your booking — {date} at {time}',
     confirmIntro: 'Please confirm your tennis court booking:',
     clickToConfirm: 'Click here to confirm:',
@@ -317,7 +318,7 @@ const I18N = {
   sr: {
     dayNames: ['Ned','Pon','Uto','Sre','Čet','Pet','Sub'],
     monthNames: ['Jan','Feb','Mar','Apr','Maj','Jun','Jul','Avg','Sep','Okt','Nov','Dec'],
-    hi: 'Zdravo', date: 'Datum', time: 'Vreme', court: 'Teren',
+    hi: 'Zdravo', date: 'Datum', time: 'Vreme', court: 'Teren', findUs: 'Kako do nas',
     confirmSubject: 'Potvrdite rezervaciju — {date} u {time}',
     confirmIntro: 'Molimo potvrdite vašu rezervaciju terena:',
     clickToConfirm: 'Kliknite ovde za potvrdu:',
@@ -349,7 +350,7 @@ const I18N = {
   ru: {
     dayNames: ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'],
     monthNames: ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'],
-    hi: 'Здравствуйте', date: 'Дата', time: 'Время', court: 'Корт',
+    hi: 'Здравствуйте', date: 'Дата', time: 'Время', court: 'Корт', findUs: 'Как нас найти',
     confirmSubject: 'Подтвердите бронирование — {date} в {time}',
     confirmIntro: 'Пожалуйста, подтвердите бронирование корта:',
     clickToConfirm: 'Нажмите, чтобы подтвердить:',
@@ -391,6 +392,20 @@ function tr(lang, key, vars) {
     }
   }
   return s;
+}
+
+// Returns a "Find us:\n{address}\n{mapUrl}" block ready to append to an email
+// body (with a leading blank line). Empty string if no map URL is configured —
+// the caller appends unconditionally and gets nothing when the friend hasn't
+// pasted a URL yet. `lang` may be omitted for admin emails (defaults to en).
+function findUsBlock_(cfg, lang) {
+  const c = (cfg && cfg.contact) || {};
+  if (!c.googleMapsUrl) return '';
+  const label = tr(lang || 'en', 'findUs');
+  const lines = ['', label + ':'];
+  if (c.address) lines.push(c.address);
+  lines.push(c.googleMapsUrl);
+  return '\n' + lines.join('\n');
 }
 
 function formatFriendlyDateLang(date, lang) {
@@ -717,6 +732,7 @@ function handleBookingRequest(body) {
   emailBody += courtLabel + '\n';
   emailBody += '\n' + tr(lang, 'clickToConfirm') + '\n' + confirmUrl + '\n\n';
   emailBody += tr(lang, 'expiresIn', { n: cfg.pendingTtlMinutes }) + '\n\n';
+  emailBody += findUsBlock_(cfg, lang);
   emailBody += '— ' + emailNameOf_(cfg);
 
   MailApp.sendEmail(body.email, subject, emailBody);
@@ -810,6 +826,7 @@ function handleTrainingRequest(body) {
   emailBody += tr(language, 'trConfirmIntro') + '\n\n';
   emailBody += confirmUrl + '\n\n';
   emailBody += tr(language, 'expiresIn', { n: cfg.pendingTtlMinutes }) + '\n\n';
+  emailBody += findUsBlock_(cfg, language);
   emailBody += '— ' + emailNameOf_(cfg);
 
   MailApp.sendEmail(pending.email, subject, emailBody);
@@ -863,6 +880,7 @@ function handleConfirm(token) {
     pending.phone ? 'Phone: ' + pending.phone : '',
     courtLabel,
     'Time: ' + timeStr + ' – ' + endTimeStr,
+    cfg.contact && cfg.contact.googleMapsUrl ? 'Map: ' + cfg.contact.googleMapsUrl : '',
   ].filter(Boolean).join('\n');
 
   // Create event on the court calendar with guest, using the Advanced Calendar API
@@ -873,6 +891,7 @@ function handleConfirm(token) {
   const eventResource = {
     summary: eventTitle,
     description: eventDescription,
+    location: (cfg.contact && cfg.contact.address) || '',
     start: { dateTime: startDate.toISOString(), timeZone: cfg.timezone },
     end: { dateTime: endDate.toISOString(), timeZone: cfg.timezone },
     attendees: [{ email: pending.email, displayName: pending.name }],
@@ -928,6 +947,7 @@ function handleConfirm(token) {
   emailBody += localCourtLabel + '\n';
   emailBody += '\n' + tr(lang, 'inviteNote') + '\n\n';
   emailBody += tr(lang, 'needCancel') + '\n' + cancelUrl + '\n\n';
+  emailBody += findUsBlock_(cfg, lang);
   emailBody += '— ' + emailNameOf_(cfg);
 
   MailApp.sendEmail(pending.email, subject, emailBody);
@@ -1087,6 +1107,7 @@ function handleCancel(cancelToken) {
   emailBody += tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr + '\n';
   emailBody += courtLabel + '\n';
   emailBody += '\n' + tr(lang, 'bookAgain') + '\n' + cfg.siteUrl + '\n\n';
+  emailBody += findUsBlock_(cfg, lang);
   emailBody += '— ' + emailNameOf_(cfg);
 
   MailApp.sendEmail(booking.email, subject, emailBody);
@@ -1254,6 +1275,7 @@ function fireReminder(e) {
   emailBody += courtLabel + '\n';
   emailBody += '\n' + tr(lang, 'needCancel') + '\n' + cancelUrl + '\n\n';
   emailBody += tr(lang, 'seeYou') + '\n\n';
+  emailBody += findUsBlock_(cfg, lang);
   emailBody += '— ' + emailNameOf_(cfg);
 
   MailApp.sendEmail(booking.email, subject, emailBody);
@@ -1355,6 +1377,7 @@ function notifyAdmins(cfg, booking, kind) {
     body += '\nClient: ' + booking.name + '\n';
     body += 'Email: ' + booking.email + '\n';
     if (booking.phone) body += 'Phone: ' + booking.phone + '\n';
+    body += findUsBlock_(cfg);
     body += '\n— ' + emailNameOf_(cfg);
 
     MailApp.sendEmail(unique.join(','), subject, body);
@@ -1396,6 +1419,7 @@ function notifyAdminsTraining(cfg, req) {
     if (req.notes)   body += '\nNotes:\n' + req.notes + '\n';
     body += '\nLanguage: '  + (req.language || 'en') + '\n';
     body += 'Submitted: ' + req.createdAt + '\n';
+    body += findUsBlock_(cfg);
     body += '\n— ' + emailNameOf_(cfg);
 
     MailApp.sendEmail(unique.join(','), subject, body);

@@ -53,6 +53,7 @@
       groupKids: 'Kids',
       notes: 'When do you want to play? Anything else we should know?',
       notesPlaceholder: 'E.g. weekday evenings, Saturday mornings, preferred coach, injuries…',
+      openInMap: 'Open in Google Maps',
     },
     sr: {
       bookCourt: 'Rezervišite teren',
@@ -99,11 +100,12 @@
       groupKids: 'Deca',
       notes: 'Kada želite da igrate? Još nešto što treba da znamo?',
       notesPlaceholder: 'Npr. radnim danima uveče, subota ujutru, željeni trener, povrede…',
+      openInMap: 'Otvori u Google Maps',
     },
     ru: {
       bookCourt: 'Забронировать корт',
       requestTraining: 'Заявка на тренировку',
-      tagline: 'Забронируйте корт или подайте заявку на тренировку',
+      tagline: 'Забронируйте корт или закажите тренировку',
       loading: 'Загрузка доступности…',
       noSlots: 'Нет свободных слотов на этот день',
       noConfig: 'Нет настроенных рабочих часов — свяжитесь с нами',
@@ -145,6 +147,7 @@
       groupKids: 'Дети',
       notes: 'Когда хотите играть? Что-нибудь ещё, что нам нужно знать?',
       notesPlaceholder: 'Напр. будни вечером, суббота утром, предпочитаемый тренер, травмы…',
+      openInMap: 'Открыть в Google Maps',
     }
   };
 
@@ -179,6 +182,14 @@
       <circle cx="50" cy="50" r="48" fill="#c5e84c"/>
       <path d="M 22 15 Q 50 50, 22 85" stroke="white" stroke-width="3" fill="none" opacity="0.7"/>
       <path d="M 78 15 Q 50 50, 78 85" stroke="white" stroke-width="3" fill="none" opacity="0.7"/>
+    </svg>`;
+  }
+
+  // ---- Map pin SVG inline ----
+  function mapPinSVG(size) {
+    return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+      <circle cx="12" cy="10" r="3"/>
     </svg>`;
   }
 
@@ -465,7 +476,11 @@
         <div class="footer-content">
           <div class="footer-name">${config.footerName || config.siteName || 'Tennis Kosmos'}</div>
           <div class="footer-info">
-            ${c.address ? c.address + '<br>' : ''}
+            ${c.address || c.googleMapsUrl ? '<div class="footer-map">' +
+              (c.googleMapsUrl ? '<span class="footer-map-pin">' + mapPinSVG(14) + '</span>' : '') +
+              (c.address ? '<span class="footer-map-addr">' + escapeHtml(c.address) + '</span>' : '') +
+              (c.googleMapsUrl ? '<span class="footer-map-sep"> · </span><a href="' + c.googleMapsUrl + '" target="_blank" rel="noopener">' + t('openInMap') + '</a>' : '') +
+              '</div>' : ''}
             ${c.email ? '<a href="mailto:' + c.email + '">' + c.email + '</a><br>' : ''}
             ${c.phone ? 'Ratko: <a href="tel:' + c.phone.replace(/\s/g, '') + '">' + c.phone + '</a><br>' : ''}
             ${c.phone2 ? 'Ivan: <a href="tel:' + c.phone2.replace(/\s/g, '') + '">' + c.phone2 + '</a><br>' : ''}
