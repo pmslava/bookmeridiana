@@ -395,17 +395,19 @@ function tr(lang, key, vars) {
 }
 
 // Returns a "Find us:\n{address}\n{mapUrl}" block ready to append to an email
-// body (with a leading blank line). Empty string if no map URL is configured —
-// the caller appends unconditionally and gets nothing when the friend hasn't
-// pasted a URL yet. `lang` may be omitted for admin emails (defaults to en).
+// body. Empty string if no map URL is configured — the caller appends
+// unconditionally and gets nothing when the friend hasn't pasted a URL yet.
+// `lang` may be omitted for admin emails (defaults to en). The block has a
+// leading newline (so it sits below the previous section) and a trailing
+// newline (so the signature lands on its own line).
 function findUsBlock_(cfg, lang) {
   const c = (cfg && cfg.contact) || {};
   if (!c.googleMapsUrl) return '';
   const label = tr(lang || 'en', 'findUs');
-  const lines = ['', label + ':'];
+  const lines = [label + ':'];
   if (c.address) lines.push(c.address);
   lines.push(c.googleMapsUrl);
-  return '\n' + lines.join('\n');
+  return '\n' + lines.join('\n') + '\n';
 }
 
 function formatFriendlyDateLang(date, lang) {
