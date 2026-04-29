@@ -92,6 +92,7 @@ function publicSettings(full) {
     slotLengthMinutes: full.slotLengthMinutes,
     workingHours: full.workingHours,
     courtPrices: full.courtPrices,
+    courtPriceOverrides: full.courtPriceOverrides || {},
     currency: full.currency,
     reminders: full.reminders,
     contact: full.contact,
@@ -139,6 +140,10 @@ function setupInitialSettings() {
       { from: '17:00', to: '20:00', price: 800,  label: 'Evening' },
       { from: '20:00', to: '22:00', price: 1200, label: 'Lights' },
     ],
+    // Sparse per-court overrides keyed by court ID. A court without an
+    // entry uses courtPrices above. A court with an entry uses ITS array
+    // for all hours (not merged with the default).
+    courtPriceOverrides: {},
     currency: 'RSD',
     reminders: { dayBefore: true, twoHoursBefore: true },
     contact: {
@@ -223,6 +228,28 @@ function validateSettings(s) {
   for (const p of s.courtPrices) {
     if (typeof p.price !== 'number' || p.price < 0) {
       throw new Error('Prices must be non-negative numbers.');
+    }
+  }
+  // courtPriceOverrides is optional. When present, it's an object
+  // mapping court ID to a non-empty array of bands with the same shape
+  // as courtPrices. Missing or {} means "all courts use defaults".
+  if (s.courtPriceOverrides !== undefined && s.courtPriceOverrides !== null) {
+    if (typeof s.courtPriceOverrides !== 'object' || Array.isArray(s.courtPriceOverrides)) {
+      throw new Error('courtPriceOverrides must be an object keyed by court ID.');
+    }
+    for (const courtId in s.courtPriceOverrides) {
+      if (!s.courts[courtId]) {
+        throw new Error('Court price override references unknown court: ' + courtId);
+      }
+      const bands = s.courtPriceOverrides[courtId];
+      if (!Array.isArray(bands) || bands.length === 0) {
+        throw new Error('Court ' + courtId + ' override must be a non-empty array of price bands.');
+      }
+      for (const p of bands) {
+        if (typeof p.price !== 'number' || p.price < 0) {
+          throw new Error('Court ' + courtId + ' override prices must be non-negative numbers.');
+        }
+      }
     }
   }
   if (!s.courts['1'] || !s.courts['2'] || !s.courts['3'] || !s.courts['4'] || !s.courts['5']) {

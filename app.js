@@ -361,19 +361,23 @@
     return getSlotsForDate(date, 1).length > 0;
   }
 
-  function getPriceForHour(hour) {
-    for (const p of config.courtPrices) {
+  function getPriceForHour(hour, courtId) {
+    const overrides = config.courtPriceOverrides || {};
+    const bands = (courtId != null && overrides[courtId])
+      ? overrides[courtId]
+      : config.courtPrices;
+    for (const p of bands) {
       const from = parseHour(p.from);
       const to = parseHour(p.to);
       if (hour >= from && hour < to) return p;
     }
-    return config.courtPrices[0];
+    return bands[0];
   }
 
-  function getTotalPrice(hour, duration) {
+  function getTotalPrice(hour, duration, courtId) {
     let total = 0;
     for (let h = hour; h < hour + duration; h++) {
-      total += getPriceForHour(h).price;
+      total += getPriceForHour(h, courtId).price;
     }
     return total;
   }
@@ -629,19 +633,30 @@
         const timeStr = formatHour(slot.hour);
         const isExpanded = expandedSlot && expandedSlot.hour === slot.hour;
 
-        const price = getPriceForHour(slot.hour);
+        const courtPriceList = slot.courts.map(c => getPriceForHour(slot.hour, c).price);
+        const minPrice = Math.min.apply(null, courtPriceList);
+        const maxPrice = Math.max.apply(null, courtPriceList);
+        const priceLabel = minPrice === maxPrice
+          ? `${minPrice} ${currency}`
+          : `${minPrice} - ${maxPrice} ${currency}`;
         const courtLabel = slot.courts.length === 1
           ? `${t('court')} ${slot.courts[0]}`
           : `${t('courts')} ${slot.courts.join(', ')}`;
         html += `<button class="slot-btn ${isExpanded ? 'expanded' : ''}" data-hour="${slot.hour}">
           <span class="slot-time">${timeStr}</span>
-          <span class="slot-info"><span class="slot-price">${price.price} ${currency}</span><span class="slot-courts">· ${courtLabel}</span></span>
+          <span class="slot-info"><span class="slot-price">${priceLabel}</span><span class="slot-courts">· ${courtLabel}</span></span>
         </button>`;
 
         if (isExpanded && slot.courts.length > 1) {
+          const pickerPriceDiffers = minPrice !== maxPrice;
           html += `<div class="picker">
             <span class="picker-label">${t('chooseCourt')}</span>
-            ${slot.courts.map(c => `<button class="picker-pill" data-court="${c}">${t('court')} ${c}</button>`).join('')}
+            ${slot.courts.map((c, i) => {
+              const label = pickerPriceDiffers
+                ? `${t('court')} ${c} - ${courtPriceList[i]} ${currency}`
+                : `${t('court')} ${c}`;
+              return `<button class="picker-pill" data-court="${c}">${label}</button>`;
+            }).join('')}
           </div>`;
         }
       }
@@ -703,7 +718,7 @@
     const timeStr = formatHour(hour);
     const endTimeStr = formatHour(hour + selectedDuration);
     const dateStr = formatDateShort(selectedDate);
-    const total = getTotalPrice(hour, selectedDuration);
+    const total = getTotalPrice(hour, selectedDuration, courtNum);
     const currency = getCurrency();
 
     let summaryParts = [
