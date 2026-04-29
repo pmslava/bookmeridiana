@@ -165,8 +165,19 @@
   let currentLang = 'sr';
   let currentMode = 'court'; // 'court' or 'training'
   let selectedDate = null;
-  let selectedDuration = 1;
-  let expandedSlot = null; // { hour } — which slot has court picker open
+  // Duration of the candidate booking in minutes. Slot grid step is 30 min,
+  // smallest booking is 60 min — see BookMeridiana note 2026-04-27.
+  let selectedDuration = 60;
+  // Allowed durations in minutes. Display labels are localised (decimal
+  // separator: "." in en, "," in sr/ru).
+  const DURATION_CHOICES = [60, 90, 120];
+  // Slot grid step. Hardcoded; the `slotLengthMinutes` setting is exposed
+  // in the schema as a future hook but is not read here.
+  const SLOT_STEP_MIN = 30;
+  // Smallest bookable duration. Drives the orphan rule: a leftover fragment
+  // < this value (and > 0) can never be filled by a future booking.
+  const MIN_BOOKING_MIN = 60;
+  let expandedSlot = null; // { startMin } — which slot has court picker open
 
   function t(key) { return STRINGS[currentLang]?.[key] || STRINGS.en[key] || key; }
   function locale() { return LOCALE_MAP[currentLang] || 'en-US'; }
@@ -293,8 +304,21 @@
     return hours;
   }
 
-  function parseHour(timeStr) {
-    return parseInt(timeStr.split(':')[0], 10);
+  // "HH:MM" → minutes from midnight. Returns NaN on bad input.
+  function parseTime(timeStr) {
+    if (typeof timeStr !== 'string') return NaN;
+    const m = /^(\d{1,2}):(\d{2})$/.exec(timeStr.trim());
+    if (!m) return NaN;
+    const h = parseInt(m[1], 10);
+    const mm = parseInt(m[2], 10);
+    if (h < 0 || h > 23 || mm < 0 || mm > 59) return NaN;
+    return h * 60 + mm;
+  }
+
+  function formatTime(minutes) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
   }
 
   function dateKey(date) {
@@ -304,52 +328,97 @@
     return `${y}-${m}-${d}`;
   }
 
-
-  function isCourtBusy(courtNum, date, hour) {
-    // API returns: courts[num].busy = [{start, end}, ...]
+  // Pull busy intervals for one court on `date`, expressed as
+  // {startMin, endMin} from local midnight. Events overlapping the day
+  // boundary are clamped.
+  function getCourtBusyOfDay(courtNum, date) {
     const busyList = availability.courts?.[courtNum]?.busy;
-    if (!busyList || busyList.length === 0) return false;
-    const slotStart = new Date(date);
-    slotStart.setHours(hour, 0, 0, 0);
-    const slotEnd = new Date(date);
-    slotEnd.setHours(hour + 1, 0, 0, 0);
-    return busyList.some(b => {
+    if (!busyList || busyList.length === 0) return [];
+    const dayStart = new Date(date);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEndMin = 1440;
+    const out = [];
+    for (const b of busyList) {
       const bs = new Date(b.start);
       const be = new Date(b.end);
-      return bs < slotEnd && be > slotStart;
-    });
+      let startMin = Math.round((bs - dayStart) / 60000);
+      let endMin = Math.round((be - dayStart) / 60000);
+      if (endMin <= 0 || startMin >= dayEndMin) continue;
+      if (startMin < 0) startMin = 0;
+      if (endMin > dayEndMin) endMin = dayEndMin;
+      if (endMin > startMin) out.push({ startMin, endMin });
+    }
+    return out;
   }
 
-  function getFreeCourtsForSlot(date, hour, duration) {
-    // Returns array of court numbers that are free for `duration` consecutive hours
+  // Orphan-prevention check (matches Code.gs isOrphanFree_). Treats
+  // working-hours edges as virtual events: a 30-min fragment between the
+  // candidate and any wall is unbookable forever (smallest booking is
+  // MIN_BOOKING_MIN = 60), so we forbid it on either side.
+  function isOrphanFree(busyOfDay, fromMin, toMin, startMin, endMin) {
+    if (startMin < fromMin || endMin > toMin) return false;
+    for (const b of busyOfDay) {
+      if (startMin < b.endMin && endMin > b.startMin) return false; // overlap
+    }
+    let prevWall = fromMin;
+    for (const b of busyOfDay) {
+      if (b.endMin <= startMin && b.endMin > prevWall) prevWall = b.endMin;
+    }
+    let nextWall = toMin;
+    for (const b of busyOfDay) {
+      if (b.startMin >= endMin && b.startMin < nextWall) nextWall = b.startMin;
+    }
+    if (startMin - prevWall === 30) return false;
+    if (nextWall - endMin === 30) return false;
+    return true;
+  }
+
+  function getFreeCourtsForSlot(date, startMin, durationMin) {
+    // Returns array of court numbers where the candidate slot is valid
+    // (no overlap, no 30-min orphan, fits within working hours of THAT
+    // court — currently working hours are global, but the call shape is
+    // future-proof for per-court hours).
+    const wh = getWorkingHoursForDate(date);
+    const endMin = startMin + durationMin;
+    let range = null;
+    for (const r of wh) {
+      const f = parseTime(r.from);
+      const t = parseTime(r.to);
+      if (!isNaN(f) && !isNaN(t) && startMin >= f && endMin <= t) {
+        range = { fromMin: f, toMin: t };
+        break;
+      }
+    }
+    if (!range) return [];
     const courtNums = Object.keys(config.calendars.courts);
     return courtNums.filter(cn => {
-      for (let h = hour; h < hour + duration; h++) {
-        if (isCourtBusy(cn, date, h)) return false;
-      }
-      return true;
+      const busy = getCourtBusyOfDay(cn, date);
+      return isOrphanFree(busy, range.fromMin, range.toMin, startMin, endMin);
     });
   }
 
-  function getSlotsForDate(date, duration) {
+  function getSlotsForDate(date, durationMin) {
     const wh = getWorkingHoursForDate(date);
     if (wh.length === 0) return [];
 
     const now = new Date();
+    const isToday = dateKey(date) === dateKey(now);
+    const nowMin = isToday ? now.getHours() * 60 + now.getMinutes() : -1;
     const slots = [];
 
     for (const range of wh) {
-      const fromH = parseHour(range.from);
-      const toH = parseHour(range.to);
+      const fromMin = parseTime(range.from);
+      const toMin = parseTime(range.to);
+      if (isNaN(fromMin) || isNaN(toMin)) continue;
 
-      for (let h = fromH; h <= toH - duration; h++) {
-        // Skip past hours for today
-        if (dateKey(date) === dateKey(now) && h <= now.getHours()) continue;
+      for (let s = fromMin; s + durationMin <= toMin; s += SLOT_STEP_MIN) {
+        // Skip past slots for today
+        if (isToday && s <= nowMin) continue;
 
-        const freeCourts = getFreeCourtsForSlot(date, h, duration);
+        const freeCourts = getFreeCourtsForSlot(date, s, durationMin);
         if (freeCourts.length === 0) continue;
 
-        slots.push({ hour: h, courts: freeCourts });
+        slots.push({ startMin: s, courts: freeCourts });
       }
     }
 
@@ -357,33 +426,37 @@
   }
 
   function hasAnySlots(date) {
-    // Quick check: any 1h slots available?
-    return getSlotsForDate(date, 1).length > 0;
+    // Quick check: any minimum-duration slots available today?
+    return getSlotsForDate(date, MIN_BOOKING_MIN).length > 0;
   }
 
-  function getPriceForHour(hour, courtId) {
+  // Look up the price band that contains the given minute-of-day, on
+  // the bands that apply to `courtId` (per-court override if present,
+  // otherwise the default `courtPrices`). Bands are configured by
+  // hour-aligned strings ("17:00") but parseTime also accepts "HH:MM",
+  // so half-hour band edges work transparently.
+  function getPriceForMinute(minute, courtId) {
     const overrides = config.courtPriceOverrides || {};
     const bands = (courtId != null && overrides[courtId])
       ? overrides[courtId]
       : config.courtPrices;
     for (const p of bands) {
-      const from = parseHour(p.from);
-      const to = parseHour(p.to);
-      if (hour >= from && hour < to) return p;
+      const from = parseTime(p.from);
+      const to = parseTime(p.to);
+      if (minute >= from && minute < to) return p;
     }
     return bands[0];
   }
 
-  function getTotalPrice(hour, duration, courtId) {
+  // Walk 30-min increments inside the booking and sum half-of-hourly-rate
+  // per increment. Correct across band boundaries: a 1.5h booking that
+  // straddles 17:00 (Day → Evening band) is summed correctly.
+  function getTotalPrice(startMin, durationMin, courtId) {
     let total = 0;
-    for (let h = hour; h < hour + duration; h++) {
-      total += getPriceForHour(h, courtId).price;
+    for (let m = startMin; m < startMin + durationMin; m += SLOT_STEP_MIN) {
+      total += getPriceForMinute(m, courtId).price / 2;
     }
     return total;
-  }
-
-  function formatHour(h) {
-    return String(h).padStart(2, '0') + ':00';
   }
 
   function formatDateShort(date) {
@@ -610,13 +683,20 @@
     const slots = getSlotsForDate(selectedDate, selectedDuration);
     const currency = getCurrency();
 
+    // Decimal separator is locale-specific (Russian/Serbian use comma).
+    const decimal = currentLang === 'en' ? '.' : ',';
+    const durationLabel = (mins) => {
+      if (mins % 60 === 0) return (mins / 60) + 'h';
+      return Math.floor(mins / 60) + decimal + (mins % 60 === 30 ? '5' : (mins % 60)) + 'h';
+    };
+
     let html = `
       <div class="slot-section">
         <div class="slot-header">
           <h3>${formatDateShort(selectedDate)}</h3>
           <div class="duration-picker">
-            ${[1, 2, 3].map(d =>
-              `<button class="duration-btn ${d === selectedDuration ? 'active' : ''}" data-dur="${d}">${d}h</button>`
+            ${DURATION_CHOICES.map(d =>
+              `<button class="duration-btn ${d === selectedDuration ? 'active' : ''}" data-dur="${d}">${durationLabel(d)}</button>`
             ).join('')}
           </div>
         </div>
@@ -630,10 +710,10 @@
     } else {
       html += `<div class="slot-list">`;
       for (const slot of slots) {
-        const timeStr = formatHour(slot.hour);
-        const isExpanded = expandedSlot && expandedSlot.hour === slot.hour;
+        const timeStr = formatTime(slot.startMin);
+        const isExpanded = expandedSlot && expandedSlot.startMin === slot.startMin;
 
-        const courtPriceList = slot.courts.map(c => getPriceForHour(slot.hour, c).price);
+        const courtPriceList = slot.courts.map(c => getPriceForMinute(slot.startMin, c).price);
         const minPrice = Math.min.apply(null, courtPriceList);
         const maxPrice = Math.max.apply(null, courtPriceList);
         const priceLabel = minPrice === maxPrice
@@ -642,7 +722,7 @@
         const courtLabel = slot.courts.length === 1
           ? `${t('court')} ${slot.courts[0]}`
           : `${t('courts')} ${slot.courts.join(', ')}`;
-        html += `<button class="slot-btn ${isExpanded ? 'expanded' : ''}" data-hour="${slot.hour}">
+        html += `<button class="slot-btn ${isExpanded ? 'expanded' : ''}" data-start="${slot.startMin}">
           <span class="slot-time">${timeStr}</span>
           <span class="slot-info"><span class="slot-price">${priceLabel}</span><span class="slot-courts">· ${courtLabel}</span></span>
         </button>`;
@@ -678,12 +758,12 @@
     // Slot click
     pane.querySelectorAll('.slot-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const hour = parseInt(btn.dataset.hour);
-        const slot = slots.find(s => s.hour === hour);
+        const startMin = parseInt(btn.dataset.start);
+        const slot = slots.find(s => s.startMin === startMin);
 
-        if (expandedSlot && expandedSlot.hour === hour) {
+        if (expandedSlot && expandedSlot.startMin === startMin) {
           if (slot.courts.length === 1) {
-            openBookingForm(hour, slot.courts[0]);
+            openBookingForm(startMin, slot.courts[0]);
             return;
           }
           // Toggle off
@@ -694,9 +774,9 @@
 
         // Expand or go straight to form
         if (slot.courts.length === 1) {
-          openBookingForm(hour, slot.courts[0]);
+          openBookingForm(startMin, slot.courts[0]);
         } else {
-          expandedSlot = { hour };
+          expandedSlot = { startMin };
           renderSlots();
         }
       });
@@ -707,18 +787,18 @@
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const court = btn.dataset.court;
-        const hour = expandedSlot.hour;
-        openBookingForm(hour, court);
+        const startMin = expandedSlot.startMin;
+        openBookingForm(startMin, court);
       });
     });
   }
 
   // ---- Booking form modal (court-only) ----
-  function openBookingForm(hour, courtNum) {
-    const timeStr = formatHour(hour);
-    const endTimeStr = formatHour(hour + selectedDuration);
+  function openBookingForm(startMin, courtNum) {
+    const timeStr = formatTime(startMin);
+    const endTimeStr = formatTime(startMin + selectedDuration);
     const dateStr = formatDateShort(selectedDate);
-    const total = getTotalPrice(hour, selectedDuration, courtNum);
+    const total = getTotalPrice(startMin, selectedDuration, courtNum);
     const currency = getCurrency();
 
     let summaryParts = [
@@ -789,8 +869,8 @@
       const payload = {
         action: 'book',
         date: isoDate,
-        startHour: hour,
-        durationHours: selectedDuration,
+        startTime: formatTime(startMin),
+        durationMinutes: selectedDuration,
         courtId: courtNum,
         name: form.name.value.trim(),
         email: form.email.value.trim(),

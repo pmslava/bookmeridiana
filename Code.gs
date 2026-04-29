@@ -124,7 +124,10 @@ function setupInitialSettings() {
     timezone: 'Europe/Belgrade',
     siteUrl: 'https://teniskosmos.com/',
     daysAhead: 10,
-    slotLengthMinutes: 60,
+    // Slot grid step. The frontend currently uses a hardcoded 30 here;
+    // the field is kept in the schema so it can become live-tunable later
+    // without a migration.
+    slotLengthMinutes: 30,
     pendingTtlMinutes: 30,
     workingHours: {
       monday:    [{ from: '08:00', to: '22:00' }],
@@ -651,7 +654,7 @@ function handleBookingRequest(body) {
   const GENERIC = 'Invalid booking request.';
 
   // Validate required fields (without echoing field names back to the client)
-  const required = ['date', 'startHour', 'durationHours', 'courtId', 'name', 'email'];
+  const required = ['date', 'startTime', 'durationMinutes', 'courtId', 'name', 'email'];
   for (const field of required) {
     if (body[field] === undefined || body[field] === null || body[field] === '') {
       return jsonResponse({ error: GENERIC }, 400);
@@ -685,19 +688,38 @@ function handleBookingRequest(body) {
     return jsonResponse({ error: GENERIC }, 400);
   }
 
-  // Validate whole-hour constraint (reject any non-integer, non-0-23)
-  const startHour = parseInt(body.startHour, 10);
-  if (!Number.isInteger(startHour) || startHour !== Number(body.startHour) || startHour < 0 || startHour > 23) {
+  // Validate startTime is on the 30-min grid
+  const startMinutes = parseTime(body.startTime);
+  if (isNaN(startMinutes) || (startMinutes % 30) !== 0) {
     return jsonResponse({ error: GENERIC }, 400);
   }
-  const durationHours = parseInt(body.durationHours, 10);
-  if (![1, 2, 3].includes(durationHours)) {
+  // Validate duration (60, 90, 120 minutes only)
+  const durationMinutes = parseInt(body.durationMinutes, 10);
+  if (![60, 90, 120].includes(durationMinutes)) {
+    return jsonResponse({ error: GENERIC }, 400);
+  }
+  const endMinutes = startMinutes + durationMinutes;
+  if (endMinutes > 1440) {
     return jsonResponse({ error: GENERIC }, 400);
   }
 
   // Validate court allow-list
   if (!cfg.courts[body.courtId]) {
     return jsonResponse({ error: GENERIC }, 400);
+  }
+
+  // Working hours + orphan-prevention check (defence-in-depth; the
+  // frontend already filters these out, but the server is the source
+  // of truth).
+  const dayName = getDayNameGS_(body.date);
+  const whForDay = (cfg.workingHours && cfg.workingHours[dayName]) || [];
+  const range = findContainingRange_(whForDay, startMinutes, endMinutes);
+  if (!range) {
+    return jsonResponse({ error: GENERIC }, 400);
+  }
+  const busyOfDay = getCourtBusyMinutesOfDay_(cfg.courts[body.courtId], body.date, cfg.timezone);
+  if (!isOrphanFree_(busyOfDay, range.fromMin, range.toMin, startMinutes, endMinutes)) {
+    return jsonResponse({ error: 'This slot was just booked by someone else. Please pick another.' }, 409);
   }
 
   // Rate limit BEFORE any side effect (no email sent on reject)
@@ -715,23 +737,16 @@ function handleBookingRequest(body) {
   body.language = I18N[requestedLang] ? requestedLang : 'en';
 
   // Build start/end timestamps
-  const startDate = new Date(body.date + 'T' + padHour(startHour) + ':00:00');
-  const endDate = new Date(startDate);
-  endDate.setHours(endDate.getHours() + durationHours);
-
-  // Quick conflict check before creating pending hold
-  const conflict = checkConflict([cfg.courts[body.courtId]], startDate, endDate);
-  if (conflict) {
-    return jsonResponse({ error: 'This slot was just booked by someone else. Please pick another.' }, 409);
-  }
+  const startDate = new Date(body.date + 'T' + formatTime(startMinutes) + ':00');
+  const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
 
   // Generate token and store pending booking
   const token = Utilities.getUuid();
   const pending = {
     token: token,
     date: body.date,
-    startHour: startHour,
-    durationHours: durationHours,
+    startTime: formatTime(startMinutes),
+    durationMinutes: durationMinutes,
     courtId: body.courtId,
     name: body.name,
     email: body.email,
@@ -749,8 +764,8 @@ function handleBookingRequest(body) {
   const scriptUrl = ScriptApp.getService().getUrl();
   const confirmUrl = scriptUrl + '?confirm=' + token;
   const friendlyDate = formatFriendlyDateLang(startDate, lang);
-  const timeStr = padHour(startHour) + ':00';
-  const endTimeStr = padHour(startHour + durationHours) + ':00';
+  const timeStr = formatTime(startMinutes);
+  const endTimeStr = formatTime(endMinutes);
 
   const subject = tr(lang, 'confirmSubject', { date: friendlyDate, time: timeStr });
   const courtLabel = tr(lang, 'court') + ' ' + body.courtId;
@@ -886,21 +901,30 @@ function handleConfirm(token) {
   }
 
   // Build start/end
-  const startDate = new Date(pending.date + 'T' + padHour(pending.startHour) + ':00:00');
-  const endDate = new Date(startDate);
-  endDate.setHours(endDate.getHours() + pending.durationHours);
+  const times = readBookingTimes_(pending);
+  const startMinutes = times.startMinutes;
+  const durationMinutes = times.durationMinutes;
+  const endMinutes = startMinutes + durationMinutes;
+  const startDate = new Date(pending.date + 'T' + formatTime(startMinutes) + ':00');
+  const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
 
-  // Final conflict check
-  const conflict = checkConflict([cfg.courts[pending.courtId]], startDate, endDate);
-  if (conflict) {
+  // Final conflict + orphan re-check (the slot grid may have shifted under
+  // the user between submit and confirm — if a coach added an event in the
+  // gap or trimmed working hours, the candidate may no longer be valid).
+  const dayName = getDayNameGS_(pending.date);
+  const whForDay = (cfg.workingHours && cfg.workingHours[dayName]) || [];
+  const range = findContainingRange_(whForDay, startMinutes, endMinutes);
+  const courtCalId = cfg.courts[pending.courtId];
+  const busyOfDay = getCourtBusyMinutesOfDay_(courtCalId, pending.date, cfg.timezone);
+  if (!range || !isOrphanFree_(busyOfDay, range.fromMin, range.toMin, startMinutes, endMinutes)) {
     props.deleteProperty('pending_' + token);
     return htmlResponse('Slot no longer available',
       'Sorry, this slot was just booked by someone else. Please go back and pick another time.');
   }
 
   // Create calendar event
-  const timeStr = padHour(pending.startHour) + ':00';
-  const endTimeStr = padHour(pending.startHour + pending.durationHours) + ':00';
+  const timeStr = formatTime(startMinutes);
+  const endTimeStr = formatTime(endMinutes);
   const courtLabel = 'Court ' + pending.courtId;
   const eventTitle = pending.name + ' — ' + courtLabel;
 
@@ -917,7 +941,7 @@ function handleConfirm(token) {
   // so we can suppress Google Meet from the start (conferenceData: null +
   // conferenceDataVersion: 1). This avoids the problem where CalendarApp
   // auto-adds a Meet link and mails the guest BEFORE we can strip it.
-  const courtCalId = cfg.courts[pending.courtId];
+  // courtCalId was already resolved above for the conflict check.
   const eventResource = {
     summary: eventTitle,
     description: eventDescription,
@@ -947,8 +971,8 @@ function handleConfirm(token) {
     phone: pending.phone,
     language: pending.language,
     date: pending.date,
-    startHour: pending.startHour,
-    durationHours: pending.durationHours,
+    startTime: formatTime(startMinutes),
+    durationMinutes: durationMinutes,
     confirmedAt: new Date().toISOString(),
   };
 
@@ -1124,10 +1148,11 @@ function handleCancel(cancelToken) {
 
   // Send cancellation email (in the client's chosen language)
   const lang = booking.language || 'en';
-  const startDate = new Date(booking.date + 'T' + padHour(booking.startHour) + ':00:00');
+  const cancelTimes = readBookingTimes_(booking);
+  const startDate = new Date(booking.date + 'T' + formatTime(cancelTimes.startMinutes) + ':00');
   const friendlyDate = formatFriendlyDateLang(startDate, lang);
-  const timeStr = padHour(booking.startHour) + ':00';
-  const endTimeStr = padHour(booking.startHour + booking.durationHours) + ':00';
+  const timeStr = formatTime(cancelTimes.startMinutes);
+  const endTimeStr = formatTime(cancelTimes.startMinutes + cancelTimes.durationMinutes);
   const courtLabel = tr(lang, 'court') + ' ' + booking.courtId;
 
   const subject = tr(lang, 'cancelledSubject', { date: friendlyDate, time: timeStr });
@@ -1285,10 +1310,11 @@ function fireReminder(e) {
   }
 
   const lang = booking.language || 'en';
-  const startDate = new Date(booking.date + 'T' + padHour(booking.startHour) + ':00:00');
+  const remTimes = readBookingTimes_(booking);
+  const startDate = new Date(booking.date + 'T' + formatTime(remTimes.startMinutes) + ':00');
   const friendlyDate = formatFriendlyDateLang(startDate, lang);
-  const timeStr = padHour(booking.startHour) + ':00';
-  const endTimeStr = padHour(booking.startHour + booking.durationHours) + ':00';
+  const timeStr = formatTime(remTimes.startMinutes);
+  const endTimeStr = formatTime(remTimes.startMinutes + remTimes.durationMinutes);
   const courtLabel = tr(lang, 'court') + ' ' + booking.courtId;
 
   const scriptUrl = ScriptApp.getService().getUrl();
@@ -1339,35 +1365,123 @@ function cleanupTrigger(triggerId) {
 }
 
 // ============================================================
-// Conflict check — uses FreeBusy
-// ============================================================
-
-function checkConflict(calendarIds, startDate, endDate) {
-  const cfg = getSettings();
-  const items = calendarIds.map(function(id) { return { id: id }; });
-
-  const response = Calendar.Freebusy.query({
-    timeMin: startDate.toISOString(),
-    timeMax: endDate.toISOString(),
-    timeZone: cfg.timezone,
-    items: items,
-  });
-
-  for (const calId of calendarIds) {
-    const cal = response.calendars[calId];
-    if (cal && cal.busy && cal.busy.length > 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// ============================================================
 // Helpers
 // ============================================================
 
-function padHour(h) {
-  return String(h).padStart(2, '0');
+// "HH:MM" → minutes from midnight. Returns NaN on bad input.
+function parseTime(s) {
+  if (typeof s !== 'string') return NaN;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+  if (!m) return NaN;
+  const h = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || mm < 0 || mm > 59) return NaN;
+  return h * 60 + mm;
+}
+
+function formatTime(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+
+const DAY_NAMES_GS = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+
+// Read either the new {startTime, durationMinutes} format or the legacy
+// {startHour, durationHours} format off a pending/confirmed record. Used
+// during the rollout window when records written before the schema change
+// may still be present in Script Properties.
+function readBookingTimes_(rec) {
+  let startMinutes, durationMinutes;
+  if (typeof rec.startTime === 'string' && rec.startTime) {
+    startMinutes = parseTime(rec.startTime);
+  } else if (typeof rec.startHour === 'number') {
+    startMinutes = rec.startHour * 60;
+  } else {
+    throw new Error('Record missing start time.');
+  }
+  if (typeof rec.durationMinutes === 'number') {
+    durationMinutes = rec.durationMinutes;
+  } else if (typeof rec.durationHours === 'number') {
+    durationMinutes = Math.round(rec.durationHours * 60);
+  } else {
+    throw new Error('Record missing duration.');
+  }
+  return { startMinutes: startMinutes, durationMinutes: durationMinutes };
+}
+
+// Pull busy intervals for one calendar on one local date, expressed as
+// {startMin, endMin} relative to that date's midnight in cfg.timezone.
+// Events overlapping the day boundary are clamped to [0, 1440].
+function getCourtBusyMinutesOfDay_(courtCalId, dateStr, timezone) {
+  const dayStart = new Date(dateStr + 'T00:00:00');
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  const response = Calendar.Freebusy.query({
+    timeMin: dayStart.toISOString(),
+    timeMax: dayEnd.toISOString(),
+    timeZone: timezone,
+    items: [{ id: courtCalId }],
+  });
+  const cal = response.calendars && response.calendars[courtCalId];
+  if (!cal || !cal.busy) return [];
+  const out = [];
+  for (const b of cal.busy) {
+    const s = new Date(b.start);
+    const e = new Date(b.end);
+    let startMin = Math.round((s - dayStart) / 60000);
+    let endMin = Math.round((e - dayStart) / 60000);
+    if (startMin < 0) startMin = 0;
+    if (endMin > 1440) endMin = 1440;
+    if (endMin > startMin) out.push({ startMin: startMin, endMin: endMin });
+  }
+  return out;
+}
+
+// Locate the working-hours range that fully contains [startMin, endMin).
+// Working-hours config is an array of {from, to} per weekday; the candidate
+// must sit inside ONE range. Returns {fromMin, toMin} or null.
+function findContainingRange_(workingHoursForDay, startMin, endMin) {
+  if (!Array.isArray(workingHoursForDay)) return null;
+  for (const r of workingHoursForDay) {
+    const fromMin = parseTime(r.from);
+    const toMin = parseTime(r.to);
+    if (!isNaN(fromMin) && !isNaN(toMin) && startMin >= fromMin && endMin <= toMin) {
+      return { fromMin: fromMin, toMin: toMin };
+    }
+  }
+  return null;
+}
+
+// Orphan-prevention check. Treats working-hours edges as virtual events
+// (per the BookMeridiana note 2026-04-27: "do not allow to book time
+// which will lead to 0.5 empty space before or after"). With min booking
+// 60 min and grid step 30 min, a fragment of exactly 30 between the
+// candidate and the nearest wall (event end / event start / working
+// boundary) is unbookable forever, so we forbid it on either side.
+function isOrphanFree_(busyOfDay, fromMin, toMin, startMin, endMin) {
+  if (startMin < fromMin || endMin > toMin) return false;
+  for (const b of busyOfDay) {
+    if (startMin < b.endMin && endMin > b.startMin) return false; // overlap
+  }
+  let prevWall = fromMin;
+  for (const b of busyOfDay) {
+    if (b.endMin <= startMin && b.endMin > prevWall) prevWall = b.endMin;
+  }
+  let nextWall = toMin;
+  for (const b of busyOfDay) {
+    if (b.startMin >= endMin && b.startMin < nextWall) nextWall = b.startMin;
+  }
+  if (startMin - prevWall === 30) return false;
+  if (nextWall - endMin === 30) return false;
+  return true;
+}
+
+function getDayNameGS_(dateStr) {
+  // dateStr "YYYY-MM-DD" → weekday name. Constructed at local midnight so
+  // the day-of-week matches the user-visible date.
+  const d = new Date(dateStr + 'T00:00:00');
+  return DAY_NAMES_GS[d.getDay()];
 }
 
 // Send court-booking notification to admin(s). kind is 'created' or 'cancelled'.
@@ -1392,8 +1506,9 @@ function notifyAdmins(cfg, booking, kind) {
     }
     if (unique.length === 0) return;
 
-    const timeStr = padHour(booking.startHour) + ':00';
-    const endTimeStr = padHour(booking.startHour + booking.durationHours) + ':00';
+    const adminTimes = readBookingTimes_(booking);
+    const timeStr = formatTime(adminTimes.startMinutes);
+    const endTimeStr = formatTime(adminTimes.startMinutes + adminTimes.durationMinutes);
     const courtLabel = 'Court ' + booking.courtId;
     const verb = kind === 'cancelled' ? 'CANCELLED' : 'NEW BOOKING';
 
