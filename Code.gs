@@ -155,6 +155,7 @@ function setupInitialSettings() {
       '2': '',
       '3': '',
       '4': '',
+      '5': '',
     },
     adminNotifications: {
       emails: [],
@@ -224,8 +225,8 @@ function validateSettings(s) {
       throw new Error('Prices must be non-negative numbers.');
     }
   }
-  if (!s.courts['1'] || !s.courts['2'] || !s.courts['3'] || !s.courts['4']) {
-    throw new Error('All four court calendar IDs are required.');
+  if (!s.courts['1'] || !s.courts['2'] || !s.courts['3'] || !s.courts['4'] || !s.courts['5']) {
+    throw new Error('All five court calendar IDs are required.');
   }
 }
 
@@ -567,7 +568,7 @@ function htmlEscape(s) {
 }
 
 // ============================================================
-// Availability — FreeBusy for the 4 court calendars
+// Availability — FreeBusy for the court calendars
 // ============================================================
 
 function handleAvailability(params) {
