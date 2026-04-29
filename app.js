@@ -638,7 +638,7 @@
         const maxPrice = Math.max.apply(null, courtPriceList);
         const priceLabel = minPrice === maxPrice
           ? `${minPrice} ${currency}`
-          : `${minPrice} - ${maxPrice} ${currency}`;
+          : `${minPrice}-${maxPrice} ${currency}`;
         const courtLabel = slot.courts.length === 1
           ? `${t('court')} ${slot.courts[0]}`
           : `${t('courts')} ${slot.courts.join(', ')}`;
