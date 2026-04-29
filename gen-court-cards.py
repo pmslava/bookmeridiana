@@ -1,5 +1,5 @@
 """
-Generate court-number cards (court-1.png ... court-4.png).
+Generate court-number cards (court-1.png ... court-5.png).
 
 Clay terracotta background (#c66c4d — matches the clay-court color used
 elsewhere in the site), white numeral, white "TEREN" label, white
@@ -42,6 +42,6 @@ def make_card(number: int, out_path: str) -> None:
 
 
 if __name__ == "__main__":
-    for n in (1, 2, 3, 4):
+    for n in (1, 2, 3, 4, 5):
         make_card(n, f"court-{n}.png")
         print(f"court-{n}.png")
