@@ -689,6 +689,10 @@ body {
   color: var(--danger);
 }
 
+.error-state .error-retry {
+  margin-top: 1rem;
+}
+
 /* ---- Footer ---- */
 .footer {
   border-top: 1px solid var(--border);

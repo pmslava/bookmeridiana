@@ -36,6 +36,8 @@
       bookingError: 'Something went wrong. Please try again.',
       slotTaken: 'This slot was just booked. Please pick another.',
       chooseCourt: 'Choose a court',
+      availabilityError: 'Couldn\'t load availability. Please try again.',
+      retry: 'Retry',
       // Training request form
       trainingTitle: 'Request a training',
       trainingIntro: 'Fill out this form and one of our coaches will call you back to arrange a training session that fits you.',
@@ -83,6 +85,8 @@
       bookingError: 'Nešto nije u redu. Pokušajte ponovo.',
       slotTaken: 'Ovaj termin je upravo rezervisan. Izaberite drugi.',
       chooseCourt: 'Izaberite teren',
+      availabilityError: 'Greška pri učitavanju dostupnosti. Pokušajte ponovo.',
+      retry: 'Pokušaj ponovo',
       // Training request form
       trainingTitle: 'Zakažite trening',
       trainingIntro: 'Popunite formular i jedan od naših trenera će vas pozvati da dogovorite trening koji vam odgovara.',
@@ -130,6 +134,8 @@
       bookingError: 'Что-то пошло не так. Попробуйте снова.',
       slotTaken: 'Этот слот только что забронирован. Выберите другой.',
       chooseCourt: 'Выберите корт',
+      availabilityError: 'Не удалось загрузить доступность. Попробуйте снова.',
+      retry: 'Повторить',
       // Training request form
       trainingTitle: 'Заявка на тренировку',
       trainingIntro: 'Заполните форму и один из наших тренеров перезвонит вам, чтобы договориться о подходящей тренировке.',
@@ -204,6 +210,68 @@
     </svg>`;
   }
 
+  // ---- Settings cache (localStorage) ----
+  // Bootstrap config.json carries only the apps script URL + language
+  // defaults. The rest of the business rules (workingHours, prices,
+  // courts, contact, branding) live in Apps Script Script Properties and
+  // are fetched via ?action=settings — a ~3s round-trip on cold start.
+  // We cache the response so subsequent visits render from cache instantly
+  // while a fresh fetch revalidates in the background. If the fresh
+  // result differs, the UI updates without disturbing an open booking
+  // modal or in-progress training form.
+  const SETTINGS_CACHE_KEY = 'tk_settings_v1'; // bump suffix on incompatible changes
+
+  function loadCachedSettings() {
+    try {
+      const raw = localStorage.getItem(SETTINGS_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+      return parsed;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveCachedSettings(settings) {
+    try { localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(settings)); } catch (e) {}
+  }
+
+  // Stringification is good enough — settings is a small JSON tree
+  // serialized the same way both times (we never mutate the cached blob).
+  function settingsEqual(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  // Re-render the parts of the UI that depend on settings, after a fresh
+  // fetch revealed a real diff vs the cached values we initially rendered
+  // with. Skips: an open booking modal (preserves the flow), the training
+  // form (preserves any user input). Always safe to call.
+  function refreshAfterSettingsChange() {
+    // selectedDate may now sit outside a smaller daysAhead window.
+    if (selectedDate) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const daysAhead = config.daysAhead || 10;
+      const lastDate = new Date(today);
+      lastDate.setDate(lastDate.getDate() + daysAhead - 1);
+      if (selectedDate < today || selectedDate > lastDate) {
+        selectedDate = null;
+        expandedSlot = null;
+      }
+    }
+
+    applySiteNames();
+    renderFooter();
+
+    if (document.querySelector('.booking-modal-overlay')) return;
+    if (currentMode !== 'court') return;
+    if (!availability) return;
+
+    renderCalendar();
+    renderSlots();
+  }
+
   // ---- Init ----
   async function init() {
     try {
@@ -215,26 +283,31 @@
       return;
     }
 
-    // Fetch business rules (prices, hours, contact, etc.) from the Apps Script
-    // settings endpoint. config.json carries only the bootstrap URL + language
-    // defaults; everything else lives in Script Properties so the friend can
-    // edit it from the admin page without touching GitHub.
-    try {
-      const sResp = await fetch(config.appsScriptUrl + '?action=settings');
-      const settings = await sResp.json();
-      if (settings && !settings.error) {
-        for (const k in settings) config[k] = settings[k];
-      }
-    } catch (e) {
-      console.error('Settings fetch failed:', e);
-      // Non-fatal: the availability fetch below will also fail and the UI
-      // will render an error state.
-    }
+    // Hydrate from settings cache so the first paint isn't blocked on the
+    // ~3s Apps Script round-trip. The fresh fetch (kicked off below)
+    // revalidates in the background and only refreshes the UI on a real
+    // diff. If there's no cache, loadAvailability fetches settings in
+    // parallel with availability and waits for both before rendering.
+    const cachedSettings = loadCachedSettings();
+    if (cachedSettings) Object.assign(config, cachedSettings);
 
     currentLang = config.defaultLanguage || 'sr';
-
     applySiteNames();
     renderShell();
+
+    if (cachedSettings) {
+      fetch(config.appsScriptUrl + '?action=settings')
+        .then(r => r.json())
+        .then(fresh => {
+          if (!fresh || fresh.error) return;
+          saveCachedSettings(fresh);
+          if (settingsEqual(cachedSettings, fresh)) return;
+          Object.assign(config, fresh);
+          refreshAfterSettingsChange();
+        })
+        .catch(e => console.error('Settings revalidation failed:', e));
+    }
+
     loadAvailability();
   }
 
@@ -278,22 +351,79 @@
   }
 
   // ---- Fetch availability from Apps Script ----
+  // On failure (network error, timeout, malformed payload, server error)
+  // we show a visible error + retry instead of silently treating every
+  // court as free — that fallback was misleading users into booking
+  // slots that were actually taken.
+  //
+  // If settings haven't been loaded yet (cold start with no cache, or a
+  // previous settings fetch failed), we kick off the settings fetch in
+  // parallel here and wait for both before rendering. Sequential fetches
+  // costed ~5s on cold start; parallelizing brings it to max(settings,
+  // availability) ≈ ~3s.
   async function loadAvailability() {
     if (currentMode !== 'court') return;
     renderLoading();
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    // Hold the loading state visible for at least this long so the user
+    // perceives the transition (especially on Retry, where errors can
+    // resolve in <50ms and the bouncing-ball flash is otherwise missed).
+    const minLoadingDelay = new Promise(r => setTimeout(r, 400));
+    const signal = controller.signal;
+
+    const settingsLoad = config.workingHours
+      ? Promise.resolve(true)
+      : fetch(config.appsScriptUrl + '?action=settings', { signal })
+          .then(r => r.json())
+          .then(s => {
+            if (!s || s.error) return false;
+            Object.assign(config, s);
+            saveCachedSettings(s);
+            applySiteNames();
+            renderFooter();
+            return true;
+          })
+          .catch(e => { console.error('Settings fetch failed:', e); return false; });
+
     try {
       const url = config.appsScriptUrl + '?action=availability&days=' + (config.daysAhead || 10);
-      const resp = await fetch(url);
-      const data = await resp.json();
+      const fetchAndParse = fetch(url, { signal }).then(r => r.json());
+      const [data, , settingsOk] = await Promise.all([fetchAndParse, minLoadingDelay, settingsLoad]);
       if (data.error) throw new Error(data.error);
+      // Without settings the calendar renders all days as unavailable
+      // (no workingHours, no courts) — surface this as a load error
+      // instead of a misleading empty state.
+      if (!settingsOk || !config.workingHours || !config.calendars || !config.calendars.courts) {
+        throw new Error('settings unavailable');
+      }
       availability = data;
     } catch (e) {
       console.error('Availability fetch failed:', e);
-      // Use empty availability so the UI still renders (all slots appear free for demo)
-      availability = { courts: {} };
+      await minLoadingDelay;
+      availability = null;
+      renderAvailabilityError();
+      return;
+    } finally {
+      clearTimeout(timeoutId);
     }
     renderCalendar();
     renderSlots();
+  }
+
+  function renderAvailabilityError() {
+    const pane = document.getElementById('calendar-pane');
+    if (pane) {
+      pane.innerHTML = `<div class="error-state">
+        ${tennisBallSVG(32)}
+        <p>${t('availabilityError')}</p>
+        <button class="btn-primary error-retry" id="retry-availability">${t('retry')}</button>
+      </div>`;
+      pane.querySelector('#retry-availability').addEventListener('click', loadAvailability);
+    }
+    const slotPane = document.getElementById('slot-pane');
+    if (slotPane) slotPane.innerHTML = '';
   }
 
   // ---- Compute bookable slots ----
@@ -526,8 +656,14 @@
           currentLang = btn.dataset.lang;
           renderShell();
           if (currentMode === 'court') {
-            renderCalendar();
-            renderSlots();
+            if (availability) {
+              renderCalendar();
+              renderSlots();
+            } else {
+              // Either first load hasn't finished or it errored out — re-run
+              // the fetch so the new-language loading or error UI shows up.
+              loadAvailability();
+            }
           } else {
             renderTrainingForm();
           }
@@ -538,34 +674,39 @@
       });
     }
 
-    // Footer from config
+    renderFooter();
+  }
+
+  // Footer is its own element outside #booking-app, so we can refresh it
+  // without disturbing the main pane. Called from renderShell on initial
+  // render, and from refreshAfterSettingsChange when fresh settings arrive.
+  function renderFooter() {
     const footer = document.getElementById('site-footer');
-    if (footer && config.contact) {
-      const c = config.contact;
-      footer.innerHTML = `
-        <svg class="footer-court" width="400" height="200" viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
-          <rect x="0" y="0" width="200" height="100" rx="4" fill="#c66c4d"/>
-          <rect x="10" y="5" width="180" height="90" fill="none" stroke="white" stroke-width="1.5"/>
-          <line x1="100" y1="5" x2="100" y2="95" stroke="white" stroke-width="1.5"/>
-          <rect x="40" y="5" width="120" height="90" fill="none" stroke="white" stroke-width="1"/>
-          <line x1="40" y1="50" x2="160" y2="50" stroke="white" stroke-width="1"/>
-        </svg>
-        <div class="footer-content">
-          <div class="footer-name">${config.footerName || config.siteName || 'Tennis Kosmos'}</div>
-          <div class="footer-info">
-            ${c.address || c.googleMapsUrl ? '<div class="footer-map">' +
-              (c.googleMapsUrl ? '<span class="footer-map-pin">' + mapPinSVG(14) + '</span>' : '') +
-              (c.address ? '<span class="footer-map-addr">' + escapeHtml(c.address) + '</span>' : '') +
-              (c.googleMapsUrl ? '<span class="footer-map-sep"> · </span><a href="' + c.googleMapsUrl + '" target="_blank" rel="noopener">' + t('openInMap') + '</a>' : '') +
-              '</div>' : ''}
-            ${c.email ? '<a href="mailto:' + c.email + '">' + c.email + '</a><br>' : ''}
-            ${c.phone ? 'Ratko: <a href="tel:' + c.phone.replace(/\s/g, '') + '">' + c.phone + '</a><br>' : ''}
-            ${c.phone2 ? 'Ivan: <a href="tel:' + c.phone2.replace(/\s/g, '') + '">' + c.phone2 + '</a><br>' : ''}
-            ${c.instagram ? '<a href="https://instagram.com/' + c.instagram.replace('@', '') + '" target="_blank" rel="noopener">' + c.instagram + '</a>' : ''}
-          </div>
+    if (!footer || !config.contact) return;
+    const c = config.contact;
+    footer.innerHTML = `
+      <svg class="footer-court" width="400" height="200" viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0" y="0" width="200" height="100" rx="4" fill="#c66c4d"/>
+        <rect x="10" y="5" width="180" height="90" fill="none" stroke="white" stroke-width="1.5"/>
+        <line x1="100" y1="5" x2="100" y2="95" stroke="white" stroke-width="1.5"/>
+        <rect x="40" y="5" width="120" height="90" fill="none" stroke="white" stroke-width="1"/>
+        <line x1="40" y1="50" x2="160" y2="50" stroke="white" stroke-width="1"/>
+      </svg>
+      <div class="footer-content">
+        <div class="footer-name">${config.footerName || config.siteName || 'Tennis Kosmos'}</div>
+        <div class="footer-info">
+          ${c.address || c.googleMapsUrl ? '<div class="footer-map">' +
+            (c.googleMapsUrl ? '<span class="footer-map-pin">' + mapPinSVG(14) + '</span>' : '') +
+            (c.address ? '<span class="footer-map-addr">' + escapeHtml(c.address) + '</span>' : '') +
+            (c.googleMapsUrl ? '<span class="footer-map-sep"> · </span><a href="' + c.googleMapsUrl + '" target="_blank" rel="noopener">' + t('openInMap') + '</a>' : '') +
+            '</div>' : ''}
+          ${c.email ? '<a href="mailto:' + c.email + '">' + c.email + '</a><br>' : ''}
+          ${c.phone ? 'Ratko: <a href="tel:' + c.phone.replace(/\s/g, '') + '">' + c.phone + '</a><br>' : ''}
+          ${c.phone2 ? 'Ivan: <a href="tel:' + c.phone2.replace(/\s/g, '') + '">' + c.phone2 + '</a><br>' : ''}
+          ${c.instagram ? '<a href="https://instagram.com/' + c.instagram.replace('@', '') + '" target="_blank" rel="noopener">' + c.instagram + '</a>' : ''}
         </div>
-      `;
-    }
+      </div>
+    `;
   }
 
   // ---- Render loading ----
