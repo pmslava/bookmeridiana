@@ -210,6 +210,63 @@
     </svg>`;
   }
 
+  // ---- Theme (light/dark) ----
+  // Initial resolution happens in an inline <head> script before paint to
+  // avoid a flash. This module owns the runtime toggle, persistence, and
+  // live system-preference tracking when the user has no explicit choice.
+  const THEME_KEY = 'tk_theme';
+  let themeToggleBound = false;
+
+  function getStoredTheme() {
+    try {
+      const v = localStorage.getItem(THEME_KEY);
+      return v === 'light' || v === 'dark' ? v : null;
+    } catch (e) { return null; }
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    // Mirror the inline-style overrides set by the pre-paint script: light
+    // mode pins the html element's bg + color-scheme, dark mode clears
+    // them so the inline <style> default ('dark') reasserts.
+    if (theme === 'light') {
+      document.documentElement.style.backgroundColor = '#ffffff';
+      document.documentElement.style.colorScheme = 'light';
+    } else {
+      document.documentElement.style.backgroundColor = '';
+      document.documentElement.style.colorScheme = '';
+    }
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', theme === 'light' ? '#ffffff' : '#0a0a0a');
+    const btn = document.getElementById('theme-toggle');
+    if (btn) {
+      const next = theme === 'light' ? 'dark' : 'light';
+      btn.setAttribute('aria-pressed', theme === 'light' ? 'true' : 'false');
+      btn.setAttribute('aria-label', `Switch to ${next} theme`);
+    }
+  }
+
+  function bindThemeToggle() {
+    if (themeToggleBound) return;
+    const btn = document.getElementById('theme-toggle');
+    if (!btn) return;
+    // Sync ARIA state with whatever the pre-paint script picked.
+    applyTheme(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
+    btn.addEventListener('click', () => {
+      const current = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+      const next = current === 'light' ? 'dark' : 'light';
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+      applyTheme(next);
+    });
+    if (window.matchMedia) {
+      const mql = window.matchMedia('(prefers-color-scheme: light)');
+      const onChange = e => { if (!getStoredTheme()) applyTheme(e.matches ? 'light' : 'dark'); };
+      if (mql.addEventListener) mql.addEventListener('change', onChange);
+      else if (mql.addListener) mql.addListener(onChange);
+    }
+    themeToggleBound = true;
+  }
+
   // ---- Settings cache (localStorage) ----
   // Bootstrap config.json carries only the apps script URL + language
   // defaults. The rest of the business rules (workingHours, prices,
@@ -274,6 +331,10 @@
 
   // ---- Init ----
   async function init() {
+    // Theme toggle lives in static HTML and is independent of config —
+    // bind it first so it works even if config.json fails to load.
+    bindThemeToggle();
+
     try {
       const resp = await fetch('config.json');
       config = await resp.json();
@@ -644,6 +705,9 @@
         }
       });
     });
+
+    // Theme toggle (lives in static HTML; bind once)
+    bindThemeToggle();
 
     // Language switcher
     const langSwitcher = document.getElementById('lang-switcher');

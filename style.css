@@ -1,9 +1,10 @@
 /* ============================================
    Tennis Kosmos — Booking Site Styles
-   Dark theme, Cal.com layout, tennis accents
+   Dark (default) + light theme, Cal.com layout, tennis accents
    ============================================ */
 
 :root {
+  /* Dark theme — default. Light overrides live in [data-theme="light"]. */
   --bg: #0a0a0a;
   --bg-raised: #141414;
   --bg-tile: #1e1e1e;
@@ -18,6 +19,12 @@
   --accent: #c5e84c;
   --accent-dark: #a8c73a;
   --accent-glow: rgba(197, 232, 76, 0.15);
+  /* --accent-bright is for filled blocks where we want the brand neon to
+     pop. In dark mode it equals --accent (the brand). In light mode it
+     stays vivid yellow-green so the SR pill / selected day / primary
+     button feel brand-aligned, not muddy. --accent stays text-readable. */
+  --accent-bright: #c5e84c;
+  --accent-bright-hover: #a8c73a;
   --clay: #c66c4d;
   --clay-dark: #8a4a35;
   --court-blue: #3b6ea5;
@@ -29,6 +36,32 @@
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   --max-w: 520px;
   --transition: 0.2s ease;
+}
+
+[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-raised: #e4e4e7;
+  --bg-tile: #f4f4f5;
+  --bg-tile-hover: #d4d4d8;
+  --bg-slot: #f4f4f5;
+  --bg-slot-hover: #e4e4e7;
+  --border: #c4c4c7;
+  --border-light: #d4d4d8;
+  --text: #18181b;
+  --text-dim: #3f3f46;
+  --text-muted: #71717a;
+  /* --accent: text + border + tab underline. Punchy yellow-green that
+     stays readable on white. */
+  --accent: #7a9c08;
+  --accent-dark: #5e7d00;
+  --accent-glow: rgba(122, 156, 8, 0.25);
+  /* --accent-bright: filled blocks (SR pill, selected day, primary button).
+     A vivid lime that visibly stands out from white while staying brand-
+     aligned with the dark theme's neon yellow. */
+  --accent-bright: #aac82d;
+  --accent-bright-hover: #92ad1f;
+  --danger: #c0392b;
+  --success: #1f8a4c;
 }
 
 *, *::before, *::after {
@@ -49,6 +82,14 @@ body {
   line-height: 1.5;
   min-height: 100vh;
   overflow-x: hidden;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+/* Bump default body weight in light theme — dark text on white renders
+   thinner than light text on dark, so a slight weight increase keeps the
+   density comparable between themes. */
+[data-theme="light"] body {
+  font-weight: 500;
 }
 
 /* ---- Hero ---- */
@@ -92,6 +133,14 @@ body {
   color: var(--accent);
 }
 
+/* In light theme, align the hero "Tenis" with the bright lime used on
+   filled brand surfaces (SR pill, selected day, primary button) instead
+   of the darker text-accent. Dark mode is unaffected because both vars
+   resolve to the same neon yellow there. */
+[data-theme="light"] .hero h1 .accent {
+  color: var(--accent-bright);
+}
+
 .hero .tagline {
   font-size: 1rem;
   color: var(--text-dim);
@@ -133,8 +182,53 @@ body {
 }
 
 .lang-btn.active {
-  background: var(--accent);
+  background: var(--accent-bright);
   color: #0a0a0a;
+}
+
+/* ---- Theme toggle (mirrors lang-switcher on the left) ---- */
+.theme-toggle {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0;
+  z-index: 10;
+  transition: background var(--transition), color var(--transition),
+              border-color var(--transition), box-shadow var(--transition);
+}
+
+.theme-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.theme-toggle svg {
+  display: block;
+}
+
+[data-theme="dark"] .theme-toggle .theme-icon-moon,
+:root:not([data-theme="light"]) .theme-toggle .theme-icon-moon {
+  display: none;
+}
+
+[data-theme="light"] .theme-toggle .theme-icon-sun {
+  display: none;
 }
 
 /* ---- Main container ---- */
@@ -156,11 +250,11 @@ body {
   flex: 1;
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-bottom: 3px solid transparent;
   color: var(--text-dim);
   font-family: var(--font);
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
   padding: 0.75rem 0.5rem;
   cursor: pointer;
   transition: color var(--transition), border-color var(--transition);
@@ -174,6 +268,12 @@ body {
 .tab-btn.active {
   color: var(--text);
   border-bottom-color: var(--accent);
+}
+
+/* Match the active tab's underline to the bright brand lime in light
+   theme so it visually pairs with the SR pill / hero "Tenis". */
+[data-theme="light"] .tab-btn.active {
+  border-bottom-color: var(--accent-bright);
 }
 
 /* ---- Calendar ---- */
@@ -291,7 +391,7 @@ body {
 }
 
 .day-cell.selected {
-  background: var(--accent) !important;
+  background: var(--accent-bright) !important;
   color: #0a0a0a !important;
   font-weight: 700;
   transform: scale(1.05);
@@ -371,6 +471,18 @@ body {
 .duration-btn.active {
   background: var(--bg-tile);
   color: var(--text);
+}
+
+/* In light theme push the inactive options to a quieter gray and bump
+   the active option's weight so the picked hour reads decisively. */
+[data-theme="light"] .duration-btn {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+[data-theme="light"] .duration-btn.active {
+  color: var(--text);
+  font-weight: 700;
 }
 
 /* ---- Slot list ---- */
@@ -473,9 +585,9 @@ body {
 }
 
 .picker-pill:hover {
-  background: var(--accent);
+  background: var(--accent-bright);
   color: #0a0a0a;
-  border-color: var(--accent);
+  border-color: var(--accent-bright);
 }
 
 .picker-label {
@@ -607,7 +719,7 @@ body {
 
 .btn-primary {
   flex: 1;
-  background: var(--accent);
+  background: var(--accent-bright);
   color: #0a0a0a;
   border: none;
   border-radius: var(--radius-sm);
@@ -620,7 +732,7 @@ body {
 }
 
 .btn-primary:hover {
-  background: var(--accent-dark);
+  background: var(--accent-bright-hover);
 }
 
 .btn-primary:active {
@@ -824,7 +936,7 @@ body {
 
 /* ---- Selection ---- */
 ::selection {
-  background: var(--accent);
+  background: var(--accent-bright);
   color: #0a0a0a;
 }
 
@@ -876,8 +988,8 @@ body {
 }
 
 .request-pill.active {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-bright);
+  border-color: var(--accent-bright);
   color: #0a0a0a;
   font-weight: 600;
 }

@@ -6,11 +6,64 @@
   <title>Tenis Kosmos — Rezervacija terena</title>
   <meta name="description" content="Rezervišite teniski teren u Novom Sadu — Tenis Kosmos">
   <meta name="theme-color" content="#0a0a0a">
+  <meta name="color-scheme" content="dark light">
+  <!-- Lock the initial paint to dark before anything else loads. This
+       guarantees no white flash even if the external stylesheet is
+       delayed; the inline script below flips to light only when the
+       user has opted in. -->
+  <style>html{background-color:#0a0a0a;color-scheme:dark}</style>
   <!-- Favicon: tennis ball -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23c5e84c'/><path d='M 22 15 Q 50 50, 22 85' stroke='white' stroke-width='4' fill='none' opacity='.7'/><path d='M 78 15 Q 50 50, 78 85' stroke='white' stroke-width='4' fill='none' opacity='.7'/></svg>">
+  <script>
+    // Resolve theme before stylesheet/paint to avoid a flash. Stored choice
+    // wins; otherwise honor prefers-color-scheme; default is dark.
+    (function () {
+      var theme = 'dark';
+      try {
+        var stored = localStorage.getItem('tk_theme');
+        if (stored === 'light' || stored === 'dark') {
+          theme = stored;
+        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+          theme = 'light';
+        }
+      } catch (e) { /* private mode etc. — fall through to dark */ }
+      document.documentElement.dataset.theme = theme;
+      // Override the inline default if (and only if) we resolved to light.
+      // Setting bg + color-scheme inline means even the very first paint
+      // matches the resolved theme — no flash possible.
+      if (theme === 'light') {
+        document.documentElement.style.backgroundColor = '#ffffff';
+        document.documentElement.style.colorScheme = 'light';
+      }
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', theme === 'light' ? '#ffffff' : '#0a0a0a');
+    })();
+  </script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+  <!-- Theme toggle (sun in dark mode, moon in light mode) -->
+  <button class="theme-toggle" id="theme-toggle" type="button"
+          aria-label="Switch to light theme" aria-pressed="false">
+    <svg class="theme-icon-sun" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" fill="currentColor"/>
+      <g stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="12" y1="2"  x2="12" y2="5"/>
+        <line x1="12" y1="19" x2="12" y2="22"/>
+        <line x1="2"  y1="12" x2="5"  y2="12"/>
+        <line x1="19" y1="12" x2="22" y2="12"/>
+        <line x1="4.6"  y1="4.6"  x2="6.7"  y2="6.7"/>
+        <line x1="17.3" y1="17.3" x2="19.4" y2="19.4"/>
+        <line x1="4.6"  y1="19.4" x2="6.7"  y2="17.3"/>
+        <line x1="17.3" y1="6.7"  x2="19.4" y2="4.6"/>
+      </g>
+    </svg>
+    <svg class="theme-icon-moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"
+            fill="currentColor"/>
+    </svg>
+  </button>
 
   <!-- Language switcher -->
   <div class="lang-switcher" id="lang-switcher"></div>
