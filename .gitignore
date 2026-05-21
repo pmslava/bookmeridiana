@@ -9,3 +9,7 @@ node_modules/
 # Admin page lives in the Apps Script project, not in the public repo.
 # Keep a local working copy but never commit it.
 admin.html
+
+# Marketing strategy and partner proposals are internal — repo is publicly
+# served via GitHub Pages, so keep these out.
+docs/
