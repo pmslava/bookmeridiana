@@ -309,10 +309,14 @@ function adminSaveSettings(incoming) {
 
 // Heat-map poster reads availability the same way the public booking page
 // does, but via google.script.run so the admin session is preserved and
-// we get the raw object (not a JSON TextOutput) back.
-function adminGetAvailability(days) {
+// we get the raw object (not a JSON TextOutput) back. startDate is an
+// "YYYY-MM-DD" string (in script timezone); if empty, query starts today.
+function adminGetAvailability(startDate, days) {
   requireAdmin();
-  return buildAvailability_({ days: String(days || 7) });
+  return buildAvailability_({
+    startDate: startDate || '',
+    days: String(days || 7),
+  });
 }
 
 // ============================================================
@@ -619,8 +623,17 @@ function buildAvailability_(params) {
   const cfg = getSettings();
   const days = Math.min(Math.max(parseInt(params.days) || 10, 1), 60);
 
-  const now = new Date();
-  const timeMin = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // Optional startDate ("YYYY-MM-DD") overrides "today" so the admin
+  // heat-map can request any past or future week. Falls back to today
+  // for the public ?action=availability endpoint.
+  let timeMin;
+  if (params.startDate && /^\d{4}-\d{2}-\d{2}$/.test(params.startDate)) {
+    const parts = params.startDate.split('-').map(Number);
+    timeMin = new Date(parts[0], parts[1] - 1, parts[2]);
+  } else {
+    const now = new Date();
+    timeMin = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
   const timeMax = new Date(timeMin);
   timeMax.setDate(timeMax.getDate() + days);
 
