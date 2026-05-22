@@ -307,6 +307,14 @@ function adminSaveSettings(incoming) {
   return { status: 'ok', savedAt: new Date().toISOString() };
 }
 
+// Heat-map poster reads availability the same way the public booking page
+// does, but via google.script.run so the admin session is preserved and
+// we get the raw object (not a JSON TextOutput) back.
+function adminGetAvailability(days) {
+  requireAdmin();
+  return buildAvailability_({ days: String(days || 7) });
+}
+
 // ============================================================
 // i18n — email copy in EN / SR / RU
 // ============================================================
@@ -602,6 +610,12 @@ function htmlEscape(s) {
 // ============================================================
 
 function handleAvailability(params) {
+  return jsonResponse(buildAvailability_(params));
+}
+
+// Private builder shared by handleAvailability (public ?action=availability)
+// and adminGetAvailability (google.script.run admin endpoint).
+function buildAvailability_(params) {
   const cfg = getSettings();
   const days = Math.min(Math.max(parseInt(params.days) || 10, 1), 60);
 
@@ -642,7 +656,7 @@ function handleAvailability(params) {
     };
   }
 
-  return jsonResponse(result);
+  return result;
 }
 
 // ============================================================
