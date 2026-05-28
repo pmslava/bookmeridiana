@@ -4,7 +4,42 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tenis Kosmos — Rezervacija terena</title>
-  <meta name="description" content="Rezervišite teniski teren u Novom Sadu — Tenis Kosmos">
+  <meta name="description" content="Tenis Kosmos — teniska škola i klub u Novom Sadu na 5 terena Meridiana. Rezervišite teren bez registracije. Fer cene, porodična atmosfera.">
+  <link rel="canonical" href="https://teniskosmos.com/">
+
+  <!-- Open Graph (for link previews in Telegram, WhatsApp, Facebook, etc.) -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Tenis Kosmos">
+  <meta property="og:title" content="Tenis Kosmos — Rezervacija terena">
+  <meta property="og:description" content="Teniska škola i klub u Novom Sadu na 5 terena Meridiana. Rezervišite teren bez registracije.">
+  <meta property="og:url" content="https://teniskosmos.com/">
+  <meta property="og:locale" content="sr_RS">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:locale:alternate" content="ru_RU">
+
+  <!-- Structured data: tells Google this is a sports club, with name, address,
+       phone, and a substantive description. Used as a fallback when the meta
+       description above isn't picked, and feeds the Knowledge Panel. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SportsClub",
+    "name": "Tenis Kosmos",
+    "alternateName": "TSU Kosmos",
+    "description": "Tenis Kosmos je teniska škola i klub u Novom Sadu na 5 terena Meridiana. Termini se rezervišu direktno, bez registracije. Treneri Ratko i Ivan vode klub i sami održavaju terene. Tereni su u dobrom stanju, cene su fer, atmosfera je porodična.",
+    "url": "https://teniskosmos.com/",
+    "sport": "Tennis",
+    "telephone": "+381628022602",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "Stojana Novakovića 2",
+      "addressLocality": "Novi Sad",
+      "postalCode": "21000",
+      "addressCountry": "RS"
+    }
+  }
+  </script>
+
   <meta name="theme-color" content="#0a0a0a">
   <meta name="color-scheme" content="dark light">
   <!-- Lock the initial paint to dark before anything else loads. This
@@ -92,7 +127,11 @@
 
   <!-- Booking app mount point -->
   <main class="main-container">
-    <div id="booking-app">
+    <!-- data-nosnippet tells Google not to use any text from the dynamically
+         rendered booking widget (button labels, loading/error messages) in
+         search result snippets. Forces Google to fall back to the meta
+         description / structured data above. -->
+    <div id="booking-app" data-nosnippet>
       <!-- Rendered by app.js -->
     </div>
   </main>
