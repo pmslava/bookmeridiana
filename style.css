@@ -668,6 +668,57 @@ body {
   color: var(--text);
 }
 
+.booking-nudge {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.booking-nudge-message {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text);
+  margin: 0 0 0.625rem 0;
+}
+
+.booking-nudge-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.nudge-option {
+  background: var(--bg-tile);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 0.5rem 0.9rem;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.nudge-option:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.nudge-option.selected {
+  background: var(--accent-bright);
+  border-color: var(--accent-bright);
+  color: #0a0a0a;
+  font-weight: 600;
+}
+
+.nudge-warn {
+  vertical-align: -2px;
+  margin-right: 0.35rem;
+  /* inherits currentColor from the pill so it always matches the label */
+}
+
 .form-group {
   margin-bottom: 0.875rem;
 }

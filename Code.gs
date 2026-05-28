@@ -735,7 +735,7 @@ function handleBookingRequest(body) {
     return jsonResponse({ error: GENERIC }, 400);
   }
 
-  // Working hours + orphan-prevention check (defence-in-depth; the
+  // Working hours + slot availability check (defence-in-depth; the
   // frontend already filters these out, but the server is the source
   // of truth).
   const dayName = getDayNameGS_(body.date);
@@ -745,7 +745,7 @@ function handleBookingRequest(body) {
     return jsonResponse({ error: GENERIC }, 400);
   }
   const busyOfDay = getCourtBusyMinutesOfDay_(cfg.courts[body.courtId], body.date, cfg.timezone);
-  if (!isOrphanFree_(busyOfDay, range.fromMin, range.toMin, startMinutes, endMinutes)) {
+  if (!isSlotAvailable_(busyOfDay, range.fromMin, range.toMin, startMinutes, endMinutes)) {
     return jsonResponse({ error: 'This slot was just booked by someone else. Please pick another.' }, 409);
   }
 
@@ -935,15 +935,15 @@ function handleConfirm(token) {
   const startDate = new Date(pending.date + 'T' + formatTime(startMinutes) + ':00');
   const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
 
-  // Final conflict + orphan re-check (the slot grid may have shifted under
-  // the user between submit and confirm — if a coach added an event in the
+  // Final conflict re-check (the slot grid may have shifted under the
+  // user between submit and confirm — if a coach added an event in the
   // gap or trimmed working hours, the candidate may no longer be valid).
   const dayName = getDayNameGS_(pending.date);
   const whForDay = (cfg.workingHours && cfg.workingHours[dayName]) || [];
   const range = findContainingRange_(whForDay, startMinutes, endMinutes);
   const courtCalId = cfg.courts[pending.courtId];
   const busyOfDay = getCourtBusyMinutesOfDay_(courtCalId, pending.date, cfg.timezone);
-  if (!range || !isOrphanFree_(busyOfDay, range.fromMin, range.toMin, startMinutes, endMinutes)) {
+  if (!range || !isSlotAvailable_(busyOfDay, range.fromMin, range.toMin, startMinutes, endMinutes)) {
     props.deleteProperty('pending_' + token);
     return htmlResponse('Slot no longer available',
       'Sorry, this slot was just booked by someone else. Please go back and pick another time.');
@@ -1480,27 +1480,15 @@ function findContainingRange_(workingHoursForDay, startMin, endMin) {
   return null;
 }
 
-// Orphan-prevention check. Treats working-hours edges as virtual events
-// (per the BookMeridiana note 2026-04-27: "do not allow to book time
-// which will lead to 0.5 empty space before or after"). With min booking
-// 60 min and grid step 30 min, a fragment of exactly 30 between the
-// candidate and the nearest wall (event end / event start / working
-// boundary) is unbookable forever, so we forbid it on either side.
-function isOrphanFree_(busyOfDay, fromMin, toMin, startMin, endMin) {
+// Slot availability check: candidate must sit within working hours and
+// must not overlap any existing event on the day. A 30-min orphan
+// fragment beside the candidate is allowed — the frontend nudges users
+// toward filling it but never blocks the booking.
+function isSlotAvailable_(busyOfDay, fromMin, toMin, startMin, endMin) {
   if (startMin < fromMin || endMin > toMin) return false;
   for (const b of busyOfDay) {
     if (startMin < b.endMin && endMin > b.startMin) return false; // overlap
   }
-  let prevWall = fromMin;
-  for (const b of busyOfDay) {
-    if (b.endMin <= startMin && b.endMin > prevWall) prevWall = b.endMin;
-  }
-  let nextWall = toMin;
-  for (const b of busyOfDay) {
-    if (b.startMin >= endMin && b.startMin < nextWall) nextWall = b.startMin;
-  }
-  if (startMin - prevWall === 30) return false;
-  if (nextWall - endMin === 30) return false;
   return true;
 }
 

@@ -35,6 +35,7 @@
       checkEmailTraining: 'We sent a confirmation link to your email. Click it to send your training request — we\'ll call you back after that.',
       bookingError: 'Something went wrong. Please try again.',
       slotTaken: 'This slot was just booked. Please pick another.',
+      nudgeMessage: 'Could you please consider adjusting? This would leave 30 minutes next to your slot that nobody else can book.',
       chooseCourt: 'Choose a court',
       availabilityError: 'Couldn\'t load availability. Please try again.',
       retry: 'Retry',
@@ -84,6 +85,7 @@
       checkEmailTraining: 'Poslali smo link za potvrdu na vaš email. Kliknite na njega da pošaljete zahtev — posle toga ćemo vas pozvati.',
       bookingError: 'Nešto nije u redu. Pokušajte ponovo.',
       slotTaken: 'Ovaj termin je upravo rezervisan. Izaberite drugi.',
+      nudgeMessage: 'Da li biste razmislili o prilagođavanju? Ostavili biste 30 slobodnih minuta pored vašeg termina koje niko drugi ne može da rezerviše.',
       chooseCourt: 'Izaberite teren',
       availabilityError: 'Greška pri učitavanju dostupnosti. Pokušajte ponovo.',
       retry: 'Pokušaj ponovo',
@@ -133,6 +135,7 @@
       checkEmailTraining: 'Мы отправили ссылку для подтверждения на ваш email. Нажмите на неё, чтобы отправить заявку — после этого мы вам перезвоним.',
       bookingError: 'Что-то пошло не так. Попробуйте снова.',
       slotTaken: 'Этот слот только что забронирован. Выберите другой.',
+      nudgeMessage: 'Не могли бы вы немного скорректировать? Рядом со слотом останется 30 свободных минут, которые никто другой не сможет забронировать.',
       chooseCourt: 'Выберите корт',
       availabilityError: 'Не удалось загрузить доступность. Попробуйте снова.',
       retry: 'Повторить',
@@ -180,8 +183,9 @@
   // Slot grid step. Hardcoded; the `slotLengthMinutes` setting is exposed
   // in the schema as a future hook but is not read here.
   const SLOT_STEP_MIN = 30;
-  // Smallest bookable duration. Drives the orphan rule: a leftover fragment
-  // < this value (and > 0) can never be filled by a future booking.
+  // Smallest bookable duration. A leftover fragment shorter than this can
+  // never be filled by a future booking, which is what the modal nudge
+  // surfaces to bookers — but it never blocks the submission.
   const MIN_BOOKING_MIN = 60;
   let expandedSlot = null; // { startMin } — which slot has court picker open
 
@@ -512,6 +516,15 @@
     return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
   }
 
+  // Localised "1h" / "1.5h" / "1,5h" style for booking durations. Decimal
+  // separator follows the current language (EN = ".", SR/RU = ",").
+  function durationLabel(mins) {
+    const decimal = currentLang === 'en' ? '.' : ',';
+    if (mins % 60 === 0) return (mins / 60) + 'h';
+    const half = (mins % 60 === 30) ? '5' : String(mins % 60);
+    return Math.floor(mins / 60) + decimal + half + 'h';
+  }
+
   function dateKey(date) {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -542,15 +555,23 @@
     return out;
   }
 
-  // Orphan-prevention check (matches Code.gs isOrphanFree_). Treats
-  // working-hours edges as virtual events: a 30-min fragment between the
-  // candidate and any wall is unbookable forever (smallest booking is
-  // MIN_BOOKING_MIN = 60), so we forbid it on either side.
-  function isOrphanFree(busyOfDay, fromMin, toMin, startMin, endMin) {
+  // Slot availability check (matches Code.gs isSlotAvailable_). Candidate
+  // must sit within working hours and must not overlap any existing event.
+  // A 30-min orphan fragment beside the candidate is allowed — the booking
+  // modal nudges users toward filling it but never blocks the booking.
+  function isSlotAvailable(busyOfDay, fromMin, toMin, startMin, endMin) {
     if (startMin < fromMin || endMin > toMin) return false;
     for (const b of busyOfDay) {
       if (startMin < b.endMin && endMin > b.startMin) return false; // overlap
     }
+    return true;
+  }
+
+  // Returns a pair of {beforeGap, afterGap} indicating whether the candidate
+  // leaves exactly 30 minutes of unbookable space (the smallest fragment that
+  // can never be filled by another booking) between itself and the nearest
+  // wall on each side. Both are 0 when there's no orphan.
+  function detectOrphan(busyOfDay, fromMin, toMin, startMin, endMin) {
     let prevWall = fromMin;
     for (const b of busyOfDay) {
       if (b.endMin <= startMin && b.endMin > prevWall) prevWall = b.endMin;
@@ -559,16 +580,58 @@
     for (const b of busyOfDay) {
       if (b.startMin >= endMin && b.startMin < nextWall) nextWall = b.startMin;
     }
-    if (startMin - prevWall === 30) return false;
-    if (nextWall - endMin === 30) return false;
-    return true;
+    return {
+      beforeGap: startMin - prevWall === 30 ? 30 : 0,
+      afterGap: nextWall - endMin === 30 ? 30 : 0,
+    };
+  }
+
+  // Build the option list shown in the booking-modal nudge. Each suggested
+  // alternative must (a) use a valid duration, (b) sit within `range`, (c)
+  // not overlap an existing booking, AND (d) be itself orphan-free — we
+  // don't want to suggest something that still leaves a 30-min gap on one
+  // side, because then the nudge wouldn't have actually helped. "keep" is
+  // always the last option and is shown even though it has the orphan
+  // (that's the whole point of the nudge).
+  function generateCandidates(busyOfDay, range, startMin, durationMin, orphan) {
+    // The user's original pick goes first so the form starts on the choice
+    // they made — and we flag it as orphan-creating so the chip can carry
+    // a warning icon. Every other option is filtered to be orphan-free
+    // (we never suggest something that still leaves a 30-min gap).
+    const options = [{ kind: 'keep', startMin, durationMin, hasOrphan: true }];
+    const tryAdd = (kind, newStart, newDuration) => {
+      if (newDuration < MIN_BOOKING_MIN) return;
+      if (!DURATION_CHOICES.includes(newDuration)) return;
+      const newEnd = newStart + newDuration;
+      if (!isSlotAvailable(busyOfDay, range.fromMin, range.toMin, newStart, newEnd)) return;
+      const newOrphan = detectOrphan(busyOfDay, range.fromMin, range.toMin, newStart, newEnd);
+      if (newOrphan.beforeGap || newOrphan.afterGap) return;
+      options.push({ kind, startMin: newStart, durationMin: newDuration, hasOrphan: false });
+    };
+    // Both-sides orphan: the only "extend" that fully fixes it adds 30 min
+    // on each side (start −= 30, duration += 60). Try that first, then the
+    // single-side extends — but those will be filtered out by the orphan-
+    // free check above when there's still a gap on the other side.
+    if (orphan.afterGap && orphan.beforeGap) {
+      tryAdd('extend', startMin - 30, durationMin + 60);
+    }
+    if (orphan.afterGap) tryAdd('extend', startMin, durationMin + 30);
+    if (orphan.beforeGap) tryAdd('extend', startMin - 30, durationMin + 30);
+    // Shift variants keep the user's chosen duration but move the booking
+    // by 30 min so the orphan disappears. Useful when the user picked their
+    // duration deliberately and doesn't want to play longer or shorter.
+    tryAdd('shiftEarlier', startMin - 30, durationMin);
+    tryAdd('shiftLater', startMin + 30, durationMin);
+    tryAdd('shortenStartLater', startMin + 30, durationMin - 30);
+    tryAdd('shortenEndEarlier', startMin, durationMin - 30);
+    return options;
   }
 
   function getFreeCourtsForSlot(date, startMin, durationMin) {
     // Returns array of court numbers where the candidate slot is valid
-    // (no overlap, no 30-min orphan, fits within working hours of THAT
-    // court — currently working hours are global, but the call shape is
-    // future-proof for per-court hours).
+    // (no overlap, fits within working hours of THAT court — currently
+    // working hours are global, but the call shape is future-proof for
+    // per-court hours).
     const wh = getWorkingHoursForDate(date);
     const endMin = startMin + durationMin;
     let range = null;
@@ -584,7 +647,7 @@
     const courtNums = Object.keys(config.calendars.courts);
     return courtNums.filter(cn => {
       const busy = getCourtBusyOfDay(cn, date);
-      return isOrphanFree(busy, range.fromMin, range.toMin, startMin, endMin);
+      return isSlotAvailable(busy, range.fromMin, range.toMin, startMin, endMin);
     });
   }
 
@@ -888,13 +951,6 @@
     const slots = getSlotsForDate(selectedDate, selectedDuration);
     const currency = getCurrency();
 
-    // Decimal separator is locale-specific (Russian/Serbian use comma).
-    const decimal = currentLang === 'en' ? '.' : ',';
-    const durationLabel = (mins) => {
-      if (mins % 60 === 0) return (mins / 60) + 'h';
-      return Math.floor(mins / 60) + decimal + (mins % 60 === 30 ? '5' : (mins % 60)) + 'h';
-    };
-
     let html = `
       <div class="slot-section">
         <div class="slot-header">
@@ -999,18 +1055,72 @@
   }
 
   // ---- Booking form modal (court-only) ----
-  function openBookingForm(startMin, courtNum) {
-    const timeStr = formatTime(startMin);
-    const endTimeStr = formatTime(startMin + selectedDuration);
+  function openBookingForm(initialStartMin, courtNum) {
+    // Mutable candidate that can be swapped from the in-modal nudge chips.
+    // Initialized from the slot the user picked in the grid.
+    const state = {
+      startMin: initialStartMin,
+      durationMin: selectedDuration,
+    };
+
     const dateStr = formatDateShort(selectedDate);
-    const total = getTotalPrice(startMin, selectedDuration, courtNum);
     const currency = getCurrency();
 
-    let summaryParts = [
-      `${dateStr}, ${timeStr} – ${endTimeStr}`,
-      `${t('court')} ${courtNum}`,
-      `${t('total')}: ${total} ${currency}`,
-    ];
+    // Compute the orphan-aware option list once. The day's busy data and
+    // the working-hours range are stable for the lifetime of the modal, so
+    // there's no need to recompute as the user clicks between chips.
+    const busy = getCourtBusyOfDay(courtNum, selectedDate);
+    const wh = getWorkingHoursForDate(selectedDate);
+    const initialEnd = initialStartMin + selectedDuration;
+    let range = null;
+    for (const r of wh) {
+      const f = parseTime(r.from);
+      const tEnd = parseTime(r.to);
+      if (!isNaN(f) && !isNaN(tEnd) && initialStartMin >= f && initialEnd <= tEnd) {
+        range = { fromMin: f, toMin: tEnd };
+        break;
+      }
+    }
+    const orphan = range
+      ? detectOrphan(busy, range.fromMin, range.toMin, initialStartMin, initialEnd)
+      : { beforeGap: 0, afterGap: 0 };
+    const candidates = (orphan.beforeGap || orphan.afterGap)
+      ? generateCandidates(busy, range, initialStartMin, selectedDuration, orphan)
+      : [];
+
+    const summaryParts = () => {
+      const timeStr = formatTime(state.startMin);
+      const endTimeStr = formatTime(state.startMin + state.durationMin);
+      const total = getTotalPrice(state.startMin, state.durationMin, courtNum);
+      return [
+        `${dateStr}, ${timeStr} – ${endTimeStr}`,
+        `${t('court')} ${courtNum}`,
+        `${t('total')}: ${total} ${currency}`,
+      ];
+    };
+
+    const warnIcon = `<svg class="nudge-warn" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M8 1.8 L14.7 14 H1.3 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 6.3 V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="12" r="0.9" fill="currentColor"/></svg>`;
+    const renderChip = (opt) => {
+      const isSelected = opt.startMin === state.startMin && opt.durationMin === state.durationMin;
+      const timeRange = `${formatTime(opt.startMin)} – ${formatTime(opt.startMin + opt.durationMin)}`;
+      const cls = ['nudge-option'];
+      if (isSelected) cls.push('selected');
+      if (opt.hasOrphan) cls.push('has-orphan');
+      return `
+        <button type="button" class="${cls.join(' ')}"
+                data-start="${opt.startMin}" data-duration="${opt.durationMin}"
+                role="radio" aria-checked="${isSelected}">${opt.hasOrphan ? warnIcon : ''}${timeRange} · ${durationLabel(opt.durationMin)}</button>
+      `;
+    };
+
+    const nudgeHtml = candidates.length > 0 ? `
+      <div class="booking-nudge">
+        <p class="booking-nudge-message">${t('nudgeMessage')}</p>
+        <div class="booking-nudge-options" role="radiogroup">
+          ${candidates.map(renderChip).join('')}
+        </div>
+      </div>
+    ` : '';
 
     const overlay = document.createElement('div');
     overlay.className = 'booking-modal-overlay';
@@ -1019,8 +1129,9 @@
         <button class="modal-close" id="modal-close-btn" aria-label="Close">&times;</button>
         <h4>${t('bookingTitle')}</h4>
         <div class="booking-summary">
-          ${summaryParts.map(s => `<div><strong>${s}</strong></div>`).join('')}
+          ${summaryParts().map(s => `<div><strong>${s}</strong></div>`).join('')}
         </div>
+        ${nudgeHtml}
         <form id="booking-form">
           <div class="form-group">
             <label>${t('name')} *</label>
@@ -1044,6 +1155,31 @@
     `;
 
     document.body.appendChild(overlay);
+
+    const summaryEl = overlay.querySelector('.booking-summary');
+    const chipsEl = overlay.querySelector('.booking-nudge-options');
+
+    const rerenderSummary = () => {
+      summaryEl.innerHTML = summaryParts().map(s => `<div><strong>${s}</strong></div>`).join('');
+    };
+    const rerenderChips = () => {
+      if (!chipsEl) return;
+      chipsEl.innerHTML = candidates.map(renderChip).join('');
+    };
+
+    if (chipsEl) {
+      chipsEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('.nudge-option');
+        if (!btn) return;
+        const newStart = Number(btn.dataset.start);
+        const newDuration = Number(btn.dataset.duration);
+        if (newStart === state.startMin && newDuration === state.durationMin) return;
+        state.startMin = newStart;
+        state.durationMin = newDuration;
+        rerenderSummary();
+        rerenderChips();
+      });
+    }
 
     // Close on overlay click
     overlay.addEventListener('click', (e) => {
@@ -1074,8 +1210,8 @@
       const payload = {
         action: 'book',
         date: isoDate,
-        startTime: formatTime(startMin),
-        durationMinutes: selectedDuration,
+        startTime: formatTime(state.startMin),
+        durationMinutes: state.durationMin,
         courtId: courtNum,
         name: form.name.value.trim(),
         email: form.email.value.trim(),
