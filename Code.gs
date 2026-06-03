@@ -336,7 +336,6 @@ const I18N = {
     expiresIn: 'This link expires in {n} minutes.',
     confirmedSubject: 'Booking confirmed — {date} at {time}',
     confirmedIntro: 'Your booking is confirmed!',
-    inviteNote: 'You will also receive a calendar invitation separately.',
     needCancel: 'Need to cancel? Click here:',
     cancelledSubject: 'Booking cancelled — {date} at {time}',
     cancelledIntro: 'Your booking has been cancelled:',
@@ -384,7 +383,6 @@ const I18N = {
     expiresIn: 'Link ističe za {n} minuta.',
     confirmedSubject: 'Rezervacija potvrđena — {date} u {time}',
     confirmedIntro: 'Vaša rezervacija je potvrđena!',
-    inviteNote: 'Pozivnicu za kalendar ćete dobiti zasebno.',
     needCancel: 'Želite da otkažete? Kliknite ovde:',
     cancelledSubject: 'Rezervacija otkazana — {date} u {time}',
     cancelledIntro: 'Vaša rezervacija je otkazana:',
@@ -429,7 +427,6 @@ const I18N = {
     expiresIn: 'Ссылка действительна {n} минут.',
     confirmedSubject: 'Бронирование подтверждено — {date} в {time}',
     confirmedIntro: 'Ваше бронирование подтверждено!',
-    inviteNote: 'Отдельно вы получите приглашение в календарь.',
     needCancel: 'Нужно отменить? Нажмите сюда:',
     cancelledSubject: 'Бронирование отменено — {date} в {time}',
     cancelledIntro: 'Ваше бронирование отменено:',
@@ -945,11 +942,13 @@ function handleBookingRequest(body) {
 
   const subject = tr(lang, 'confirmSubject', { date: friendlyDate, time: timeStr });
   const courtLabel = tr(lang, 'court') + ' ' + body.courtId;
+  const priceStr = formatPrice_(calculateBookingPrice_(cfg, pending), cfg);
 
   let emailBody = tr(lang, 'hi') + ' ' + body.name + ',\n\n';
   emailBody += tr(lang, 'confirmIntro') + '\n\n';
   emailBody += tr(lang, 'date') + ': ' + friendlyDate + '\n';
   emailBody += tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr + '\n';
+  emailBody += tr(lang, 'total') + ': ' + priceStr + '\n';
   emailBody += courtLabel + '\n';
   emailBody += '\n' + tr(lang, 'clickToConfirm') + '\n' + confirmUrl + '\n\n';
   emailBody += tr(lang, 'expiresIn', { n: cfg.pendingTtlMinutes }) + '\n\n';
@@ -961,6 +960,7 @@ function handleBookingRequest(body) {
     + emailDetailsHtml_([
         { label: tr(lang, 'date'), value: friendlyDate },
         { label: tr(lang, 'time'), value: timeStr + ' – ' + endTimeStr },
+        { label: tr(lang, 'total'), value: priceStr },
         { label: tr(lang, 'court'), value: String(body.courtId) },
       ])
     + emailButton_(tr(lang, 'confirmPageButton'), confirmUrl)
@@ -1120,19 +1120,41 @@ function handleConfirm(token) {
   // Create calendar event
   const timeStr = formatTime(startMinutes);
   const endTimeStr = formatTime(endMinutes);
+  const lang = pending.language || 'en';
   const courtLabel = 'Court ' + pending.courtId;
+  const localCourtLabel = tr(lang, 'court') + ' ' + pending.courtId;
   const eventTitle = pending.name + ' — ' + courtLabel;
   const priceStr = formatPrice_(calculateBookingPrice_(cfg, pending), cfg);
+  const friendlyDate = formatFriendlyDateLang(startDate, lang);
 
-  const eventDescription = [
-    'Booked by: ' + pending.name,
-    'Email: ' + pending.email,
-    pending.phone ? 'Phone: ' + pending.phone : '',
-    courtLabel,
-    'Time: ' + timeStr + ' – ' + endTimeStr,
-    tr(pending.language || 'en', 'total') + ': ' + priceStr,
-    cfg.contact && cfg.contact.googleMapsUrl ? 'Map: ' + cfg.contact.googleMapsUrl : '',
-  ].filter(Boolean).join('\n');
+  // Cancel link is generated up-front so it can live inside the event
+  // description: Google mails that description to the guest as its own native
+  // calendar invitation (sendUpdates:'all' below), and that single invite is
+  // the confirmation email — so it has to carry the cancel link too.
+  const cancelToken = Utilities.getUuid();
+  const scriptUrl = ScriptApp.getService().getUrl();
+  const cancelUrl = scriptUrl + '?cancel=' + cancelToken;
+
+  // Everything the client needs goes into the description, because Google builds
+  // the invitation email from the event's own fields — we cannot style or add to
+  // that email any other way. (The court calendar / coach reads this same text.)
+  const descLines = [
+    tr(lang, 'confirmedIntro'),
+    '',
+    tr(lang, 'date') + ': ' + friendlyDate,
+    tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr,
+    localCourtLabel,
+    tr(lang, 'total') + ': ' + priceStr,
+    '',
+    pending.name + (pending.phone ? ' · ' + pending.phone : '') + ' · ' + pending.email,
+    '',
+    tr(lang, 'needCancel'),
+    cancelUrl,
+  ];
+  let eventDescription = descLines.join('\n');
+  const findUsText = findUsBlock_(cfg, lang);
+  if (findUsText) eventDescription += '\n\n' + findUsText.trim();
+  eventDescription += '\n\n— ' + emailNameOf_(cfg);
 
   // Create event on the court calendar with guest, using the Advanced Calendar API
   // so we can suppress Google Meet from the start (conferenceData: null +
@@ -1149,6 +1171,12 @@ function handleConfirm(token) {
     conferenceData: null,
     reminders: { useDefault: true },
   };
+  // sendUpdates:'all' — Google emails the guest its OWN calendar invitation.
+  // That native invite IS the single confirmation email (one letter, not two):
+  // it auto-adds the booking to the client's calendar and auto-updates/removes
+  // it if the event changes. All client-facing details live in the description
+  // above. The guest also stays on the guest list, which fireReminder's
+  // delete-detection relies on.
   const createdCourtEvent = Calendar.Events.insert(
     eventResource, courtCalId,
     { sendUpdates: 'all', conferenceDataVersion: 1 }
@@ -1157,7 +1185,6 @@ function handleConfirm(token) {
   const courtEventId = createdCourtEvent.id + '@google.com';
 
   // Store confirmed booking info (for cancellation and reminders)
-  const cancelToken = Utilities.getUuid();
   const confirmed = {
     cancelToken: cancelToken,
     confirmToken: token,
@@ -1184,37 +1211,11 @@ function handleConfirm(token) {
   // Schedule reminder triggers
   scheduleReminders(cancelToken, startDate);
 
-  // Send confirmation email (in the client's chosen language)
-  const lang = pending.language;
-  const scriptUrl = ScriptApp.getService().getUrl();
-  const cancelUrl = scriptUrl + '?cancel=' + cancelToken;
-  const friendlyDate = formatFriendlyDateLang(startDate, lang);
-  const localCourtLabel = tr(lang, 'court') + ' ' + pending.courtId;
-
-  const subject = tr(lang, 'confirmedSubject', { date: friendlyDate, time: timeStr });
-  let emailBody = tr(lang, 'hi') + ' ' + pending.name + ',\n\n';
-  emailBody += tr(lang, 'confirmedIntro') + '\n\n';
-  emailBody += tr(lang, 'date') + ': ' + friendlyDate + '\n';
-  emailBody += tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr + '\n';
-  emailBody += tr(lang, 'total') + ': ' + priceStr + '\n';
-  emailBody += localCourtLabel + '\n';
-  emailBody += '\n' + tr(lang, 'inviteNote') + '\n\n';
-  emailBody += tr(lang, 'needCancel') + '\n' + cancelUrl + '\n\n';
-  emailBody += findUsBlock_(cfg, lang);
-  emailBody += '— ' + emailNameOf_(cfg);
-
-  const htmlBody = emailShell_(cfg, lang, pending.name,
-    emailParagraph_(tr(lang, 'confirmedIntro'))
-    + emailDetailsHtml_([
-        { label: tr(lang, 'date'), value: friendlyDate },
-        { label: tr(lang, 'time'), value: timeStr + ' – ' + endTimeStr },
-        { label: tr(lang, 'total'), value: priceStr },
-        { label: tr(lang, 'court'), value: String(pending.courtId) },
-      ])
-    + emailParagraph_(tr(lang, 'inviteNote'))
-    + emailCancelLine_(lang, cancelUrl));
-
-  MailApp.sendEmail(pending.email, subject, emailBody, { htmlBody: htmlBody });
+  // No separate confirmation email is sent from here on purpose: Google already
+  // emailed the guest its native calendar invitation (sendUpdates:'all' above),
+  // which carries every detail from the event description and auto-syncs to the
+  // client's calendar. Sending our own letter too would put the client back to
+  // two emails — the exact thing we set out to avoid.
 
   // Notify admin(s).
   notifyAdmins(cfg, pending, 'created');
@@ -1488,7 +1489,12 @@ function actionPage_(opts) {
     + '</form>'
     + '</body></html>';
 
-  return HtmlService.createHtmlOutput(html);
+  // addMetaTag is required for mobile scaling: HtmlService serves pages inside
+  // an iframe wrapper, and a <meta viewport> in the body does NOT reach the
+  // outer Google page. Without this the page renders at desktop width on phones
+  // (tiny font + big side margins).
+  return HtmlService.createHtmlOutput(html)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 function confirmBookingPage_(token) {
@@ -2020,5 +2026,10 @@ function htmlResponse(title, body, theme) {
     + '<h1>' + title + '</h1>'
     + '<p>' + body + '</p>'
     + '</body></html>';
-  return HtmlService.createHtmlOutput(html);
+  // addMetaTag is required for mobile scaling: HtmlService serves pages inside
+  // an iframe wrapper, and a <meta viewport> in the body does NOT reach the
+  // outer Google page. Without this the page renders at desktop width on phones
+  // (tiny font + big side margins).
+  return HtmlService.createHtmlOutput(html)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
