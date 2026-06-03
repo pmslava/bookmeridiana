@@ -1508,14 +1508,17 @@ function confirmBookingPage_(token) {
     return htmlResponse('Link expired', 'This confirmation link has expired. Please book again.', pending.theme || '');
   }
   const lang = pending.language || 'en';
+  const cfg = getSettings();
   const times = readBookingTimes_(pending);
   const startDate = new Date(pending.date + 'T' + formatTime(times.startMinutes) + ':00');
+  const priceStr = formatPrice_(calculateBookingPrice_(cfg, pending), cfg);
   return actionPage_({
     title: tr(lang, 'confirmPageTitle'),
     intro: tr(lang, 'confirmPageIntro'),
     details: [
       { label: tr(lang, 'date'), value: formatFriendlyDateLang(startDate, lang) },
       { label: tr(lang, 'time'), value: formatTime(times.startMinutes) + ' – ' + formatTime(times.startMinutes + times.durationMinutes) },
+      { label: tr(lang, 'total'), value: priceStr },
       { label: tr(lang, 'court'), value: String(pending.courtId) },
     ],
     actionValue: 'confirmBooking',
