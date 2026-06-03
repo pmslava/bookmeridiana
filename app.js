@@ -1217,6 +1217,7 @@
         email: form.email.value.trim(),
         phone: form.phone.value.trim(),
         language: currentLang,
+        theme: document.documentElement.dataset.theme === 'light' ? 'light' : 'dark',
       };
 
       try {
@@ -1373,6 +1374,7 @@
         group: readPill('group'),
         notes: form.notes.value.trim(),
         language: currentLang,
+        theme: document.documentElement.dataset.theme === 'light' ? 'light' : 'dark',
       };
 
       try {

@@ -329,7 +329,7 @@ const I18N = {
   en: {
     dayNames: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
     monthNames: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
-    hi: 'Hi', date: 'Date', time: 'Time', court: 'Court', findUs: 'Find us',
+    hi: 'Hi', date: 'Date', time: 'Time', court: 'Court', total: 'Total', findUs: 'Find us',
     confirmSubject: 'Confirm your booking — {date} at {time}',
     confirmIntro: 'Please confirm your tennis court booking:',
     clickToConfirm: 'Click here to confirm:',
@@ -346,10 +346,26 @@ const I18N = {
     reminderBodyDay: 'This is a reminder that your tennis booking is tomorrow:',
     reminderBodyHours: 'This is a reminder that your tennis booking is in 2 hours:',
     seeYou: 'See you on the court!',
+    viewMap: 'View map',
+    bookAgainButton: 'Book another time',
+    cancelQuestion: 'Need to cancel?',
+    cancelAction: 'Cancel this booking',
     htmlConfirmedTitle: 'Booking confirmed!',
     htmlConfirmedBody: 'Your court is booked for {date} at {time}.<br><br>A confirmation email with a calendar invite has been sent to {email}.<br><br><a href="{url}">Back to {site}</a>',
     htmlCancelledTitle: 'Booking cancelled',
     htmlCancelledBody: 'Your booking for {date} at {time} has been cancelled.<br><br>A cancellation email has been sent to {email}.<br><br><a href="{url}">Book another time</a>',
+    // Interstitial confirmation pages — the email links open these read-only
+    // pages; the action only runs when the visitor clicks (a POST), so
+    // mail-scanner link prefetch (GET) can no longer auto-trigger it.
+    confirmPageTitle: 'Confirm your booking',
+    confirmPageIntro: 'Please review and confirm your court booking:',
+    confirmPageButton: 'Confirm booking',
+    cancelPageTitle: 'Cancel your booking?',
+    cancelPageIntro: 'Are you sure you want to cancel this booking? This cannot be undone.',
+    cancelPageButton: 'Yes, cancel my booking',
+    trConfirmPageTitle: 'Confirm your training request',
+    trConfirmPageIntro: 'Please confirm your training request:',
+    trConfirmPageButton: 'Confirm request',
     // Training request flow
     trConfirmSubject: 'Confirm your training request',
     trConfirmIntro: 'Thank you for your training request! Please click the link below to confirm that this is really you:',
@@ -361,7 +377,7 @@ const I18N = {
   sr: {
     dayNames: ['Ned','Pon','Uto','Sre','Čet','Pet','Sub'],
     monthNames: ['Jan','Feb','Mar','Apr','Maj','Jun','Jul','Avg','Sep','Okt','Nov','Dec'],
-    hi: 'Zdravo', date: 'Datum', time: 'Vreme', court: 'Teren', findUs: 'Kako do nas',
+    hi: 'Zdravo', date: 'Datum', time: 'Vreme', court: 'Teren', total: 'Ukupno', findUs: 'Kako do nas',
     confirmSubject: 'Potvrdite rezervaciju — {date} u {time}',
     confirmIntro: 'Molimo potvrdite vašu rezervaciju terena:',
     clickToConfirm: 'Kliknite ovde za potvrdu:',
@@ -378,10 +394,23 @@ const I18N = {
     reminderBodyDay: 'Ovo je podsetnik da je vaša rezervacija sutra:',
     reminderBodyHours: 'Ovo je podsetnik da je vaša rezervacija za 2 sata:',
     seeYou: 'Vidimo se na terenu!',
+    viewMap: 'Pogledaj mapu',
+    bookAgainButton: 'Rezerviši drugi termin',
+    cancelQuestion: 'Želite da otkažete?',
+    cancelAction: 'Otkaži rezervaciju',
     htmlConfirmedTitle: 'Rezervacija potvrđena!',
     htmlConfirmedBody: 'Vaš teren je rezervisan za {date} u {time}.<br><br>Email sa potvrdom i pozivnicom za kalendar je poslat na {email}.<br><br><a href="{url}">Nazad na {site}</a>',
     htmlCancelledTitle: 'Rezervacija otkazana',
     htmlCancelledBody: 'Vaša rezervacija za {date} u {time} je otkazana.<br><br>Email o otkazivanju je poslat na {email}.<br><br><a href="{url}">Rezervišite drugi termin</a>',
+    confirmPageTitle: 'Potvrdite rezervaciju',
+    confirmPageIntro: 'Proverite i potvrdite vašu rezervaciju terena:',
+    confirmPageButton: 'Potvrdi rezervaciju',
+    cancelPageTitle: 'Otkazati rezervaciju?',
+    cancelPageIntro: 'Da li ste sigurni da želite da otkažete ovu rezervaciju? Ovo se ne može poništiti.',
+    cancelPageButton: 'Da, otkaži rezervaciju',
+    trConfirmPageTitle: 'Potvrdite zahtev za trening',
+    trConfirmPageIntro: 'Molimo potvrdite vaš zahtev za trening:',
+    trConfirmPageButton: 'Potvrdi zahtev',
     // Training request flow
     trConfirmSubject: 'Potvrdite zahtev za trening',
     trConfirmIntro: 'Hvala na zahtevu za trening! Kliknite na link ispod da potvrdite da ste to stvarno vi:',
@@ -393,7 +422,7 @@ const I18N = {
   ru: {
     dayNames: ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'],
     monthNames: ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'],
-    hi: 'Здравствуйте', date: 'Дата', time: 'Время', court: 'Корт', findUs: 'Как нас найти',
+    hi: 'Здравствуйте', date: 'Дата', time: 'Время', court: 'Корт', total: 'Стоимость', findUs: 'Как нас найти',
     confirmSubject: 'Подтвердите бронирование — {date} в {time}',
     confirmIntro: 'Пожалуйста, подтвердите бронирование корта:',
     clickToConfirm: 'Нажмите, чтобы подтвердить:',
@@ -410,10 +439,23 @@ const I18N = {
     reminderBodyDay: 'Напоминаем, что ваша тренировка завтра:',
     reminderBodyHours: 'Напоминаем, что ваша тренировка через 2 часа:',
     seeYou: 'До встречи на корте!',
+    viewMap: 'Посмотреть на карте',
+    bookAgainButton: 'Забронировать другое время',
+    cancelQuestion: 'Нужно отменить?',
+    cancelAction: 'Отменить бронирование',
     htmlConfirmedTitle: 'Бронирование подтверждено!',
     htmlConfirmedBody: 'Ваш корт забронирован на {date} в {time}.<br><br>На {email} отправлено письмо с подтверждением и приглашением в календарь.<br><br><a href="{url}">Вернуться на {site}</a>',
     htmlCancelledTitle: 'Бронирование отменено',
     htmlCancelledBody: 'Ваше бронирование на {date} в {time} отменено.<br><br>Письмо об отмене отправлено на {email}.<br><br><a href="{url}">Забронировать другое время</a>',
+    confirmPageTitle: 'Подтвердите бронирование',
+    confirmPageIntro: 'Пожалуйста, проверьте и подтвердите бронирование корта:',
+    confirmPageButton: 'Подтвердить бронирование',
+    cancelPageTitle: 'Отменить бронирование?',
+    cancelPageIntro: 'Вы уверены, что хотите отменить это бронирование? Это действие нельзя отменить.',
+    cancelPageButton: 'Да, отменить бронирование',
+    trConfirmPageTitle: 'Подтвердите заявку на тренировку',
+    trConfirmPageIntro: 'Пожалуйста, подтвердите заявку на тренировку:',
+    trConfirmPageButton: 'Подтвердить заявку',
     // Training request flow
     trConfirmSubject: 'Подтвердите заявку на тренировку',
     trConfirmIntro: 'Спасибо за заявку на тренировку! Нажмите на ссылку ниже, чтобы подтвердить, что это действительно вы:',
@@ -451,6 +493,86 @@ function findUsBlock_(cfg, lang) {
   if (c.address) lines.push(c.address);
   lines.push(c.googleMapsUrl);
   return '\n' + lines.join('\n') + '\n';
+}
+
+// ============================================================
+// HTML email building
+// ============================================================
+// Every client email is sent with BOTH a plain-text body and an htmlBody.
+// The plain text is the fallback (it keeps the raw confirm/cancel URL so it
+// stays clickable when a client renders text only — the user's "clients can
+// block UI" caveat). The HTML hides the raw URL behind a button/anchor and
+// looks tidier. All styling is INLINED: mail clients strip <style>/<head> CSS
+// and ignore CSS variables and media queries, so there's no shared stylesheet
+// and no theme switching here — the email renders on a neutral light card
+// (forcing a dark email is unreliable; many clients apply their own dark-mode
+// inversion). Only the served confirm/cancel PAGES follow the site theme.
+
+var EMAIL_FONT_ = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+
+// Wraps inner content in the greeting + find-us + signature chrome.
+function emailShell_(cfg, lang, name, innerHtml) {
+  return '<div style="margin:0;padding:0;background:#f4f4f5;">'
+    + '<div style="max-width:520px;margin:0 auto;padding:24px 20px;font-family:' + EMAIL_FONT_ + ';'
+    + 'font-size:16px;line-height:1.6;color:#18181b;">'
+    + '<p style="margin:0 0 16px;">' + htmlEscape(tr(lang, 'hi')) + ' ' + htmlEscape(name) + ',</p>'
+    + innerHtml
+    + findUsBlockHtml_(cfg, lang)
+    + '<p style="margin:24px 0 0;color:#52525b;">— ' + htmlEscape(emailNameOf_(cfg)) + '</p>'
+    + '</div></div>';
+}
+
+function emailParagraph_(text) {
+  return '<p style="margin:0 0 16px;">' + htmlEscape(text) + '</p>';
+}
+
+function emailNote_(text) {
+  return '<p style="margin:0 0 16px;font-size:14px;color:#71717a;">' + htmlEscape(text) + '</p>';
+}
+
+// rows: [{ label, value }] → a bordered detail card.
+function emailDetailsHtml_(rows) {
+  const trs = rows.map(function (r) {
+    return '<tr>'
+      + '<td style="padding:3px 14px 3px 0;color:#52525b;white-space:nowrap;vertical-align:top;font-size:15px;">'
+      + htmlEscape(r.label) + '</td>'
+      + '<td style="padding:3px 0;font-weight:600;font-size:15px;">' + htmlEscape(r.value) + '</td>'
+      + '</tr>';
+  }).join('');
+  return '<div style="margin:0 0 20px;background:#fafafa;border:1px solid #e4e4e7;border-radius:10px;padding:12px 16px;">'
+    + '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tbody>'
+    + trs + '</tbody></table></div>';
+}
+
+// A primary call-to-action rendered as a button-styled anchor (no raw URL).
+function emailButton_(label, url) {
+  return '<div style="text-align:center;margin:0 0 20px;">'
+    + '<a href="' + htmlEscape(url) + '" '
+    + 'style="display:inline-block;padding:14px 32px;font-family:' + EMAIL_FONT_ + ';font-size:16px;'
+    + 'font-weight:700;color:#18181b;background:#aac82d;text-decoration:none;border-radius:10px;">'
+    + htmlEscape(label) + '</a></div>';
+}
+
+function emailLink_(label, url) {
+  return '<a href="' + htmlEscape(url) + '" style="color:#5e7d00;font-weight:600;">' + htmlEscape(label) + '</a>';
+}
+
+// A subtle "Need to cancel? Cancel this booking" line (confirmed + reminder).
+function emailCancelLine_(lang, cancelUrl) {
+  return '<p style="margin:4px 0 16px;font-size:14px;color:#71717a;">'
+    + htmlEscape(tr(lang, 'cancelQuestion')) + ' '
+    + emailLink_(tr(lang, 'cancelAction'), cancelUrl) + '</p>';
+}
+
+// HTML twin of findUsBlock_ — the map URL becomes a "View map" link, not raw.
+function findUsBlockHtml_(cfg, lang) {
+  const c = (cfg && cfg.contact) || {};
+  if (!c.googleMapsUrl) return '';
+  const l = lang || 'en';
+  let inner = '<strong>' + htmlEscape(tr(l, 'findUs')) + ':</strong><br>';
+  if (c.address) inner += htmlEscape(c.address) + '<br>';
+  inner += emailLink_(tr(l, 'viewMap'), c.googleMapsUrl);
+  return '<p style="margin:24px 0 0;font-size:15px;color:#52525b;line-height:1.7;">' + inner + '</p>';
 }
 
 function formatFriendlyDateLang(date, lang) {
@@ -493,7 +615,7 @@ function doGet(e) {
       if (!/^[0-9a-fA-F-]{8,64}$/.test(params.confirm)) {
         return htmlResponse('Invalid link', 'This link is not valid.');
       }
-      return handleConfirm(params.confirm);
+      return confirmBookingPage_(params.confirm);
     }
 
     // --- Confirm a pending training request ---
@@ -501,7 +623,7 @@ function doGet(e) {
       if (!/^[0-9a-fA-F-]{8,64}$/.test(params.confirmTraining)) {
         return htmlResponse('Invalid link', 'This link is not valid.');
       }
-      return handleConfirmTraining(params.confirmTraining);
+      return confirmTrainingPage_(params.confirmTraining);
     }
 
     // --- Cancel a confirmed booking ---
@@ -509,7 +631,7 @@ function doGet(e) {
       if (!/^[0-9a-fA-F-]{8,64}$/.test(params.cancel)) {
         return htmlResponse('Invalid link', 'This link is not valid.');
       }
-      return handleCancel(params.cancel);
+      return cancelBookingPage_(params.cancel);
     }
 
     // --- Default: return availability ---
@@ -530,6 +652,20 @@ function doGet(e) {
 
 function doPost(e) {
   try {
+    // Confirm/cancel/training-confirm interstitial pages submit a urlencoded
+    // POST so passive GET prefetching by mail-scanner bots can't trigger the
+    // action. These arrive as e.parameter (not JSON in postData.contents).
+    const formAction = e && e.parameter && e.parameter.action;
+    if (formAction === 'confirmBooking' || formAction === 'cancelBooking' || formAction === 'confirmTrainingRequest') {
+      const tok = formAction === 'cancelBooking' ? e.parameter.cancelToken : e.parameter.token;
+      if (!/^[0-9a-fA-F-]{8,64}$/.test(tok || '')) {
+        return htmlResponse('Invalid link', 'This link is not valid.');
+      }
+      if (formAction === 'confirmBooking') return handleConfirm(tok);
+      if (formAction === 'cancelBooking') return handleCancel(tok);
+      return handleConfirmTraining(tok);
+    }
+
     const body = JSON.parse(e.postData.contents);
 
     if (body.action === 'saveSettings') {
@@ -607,6 +743,14 @@ function htmlEscape(s) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// Normalize a requested page theme to the allow-list. Anything other than an
+// explicit 'light' or 'dark' returns '' — callers treat '' as "unknown", and
+// the served pages then fall back to the visitor's prefers-color-scheme.
+function normalizeTheme_(t) {
+  const v = String(t || '').toLowerCase();
+  return (v === 'light' || v === 'dark') ? v : '';
 }
 
 // ============================================================
@@ -763,6 +907,10 @@ function handleBookingRequest(body) {
   const requestedLang = String(body.language || '').toLowerCase();
   body.language = I18N[requestedLang] ? requestedLang : 'en';
 
+  // Carry the visitor's light/dark choice so the confirm/cancel pages match
+  // the look of the site they booked from. '' = unknown (page uses system pref).
+  const theme = normalizeTheme_(body.theme);
+
   // Build start/end timestamps
   const startDate = new Date(body.date + 'T' + formatTime(startMinutes) + ':00');
   const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
@@ -779,6 +927,7 @@ function handleBookingRequest(body) {
     email: body.email,
     phone: body.phone || '',
     language: body.language || 'en',
+    theme: theme,
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + cfg.pendingTtlMinutes * 60 * 1000).toISOString(),
   };
@@ -807,7 +956,17 @@ function handleBookingRequest(body) {
   emailBody += findUsBlock_(cfg, lang);
   emailBody += '— ' + emailNameOf_(cfg);
 
-  MailApp.sendEmail(body.email, subject, emailBody);
+  const htmlBody = emailShell_(cfg, lang, body.name,
+    emailParagraph_(tr(lang, 'confirmIntro'))
+    + emailDetailsHtml_([
+        { label: tr(lang, 'date'), value: friendlyDate },
+        { label: tr(lang, 'time'), value: timeStr + ' – ' + endTimeStr },
+        { label: tr(lang, 'court'), value: String(body.courtId) },
+      ])
+    + emailButton_(tr(lang, 'confirmPageButton'), confirmUrl)
+    + emailNote_(tr(lang, 'expiresIn', { n: cfg.pendingTtlMinutes })));
+
+  MailApp.sendEmail(body.email, subject, emailBody, { htmlBody: htmlBody });
 
   return jsonResponse({ status: 'pending', message: 'Check your email to confirm the booking.' });
 }
@@ -863,6 +1022,9 @@ function handleTrainingRequest(body) {
   const requestedLang = String(body.language || '').toLowerCase();
   const language = I18N[requestedLang] ? requestedLang : 'en';
 
+  // Carry the visitor's light/dark choice for the confirm page.
+  const theme = normalizeTheme_(body.theme);
+
   // Rate limit by email
   const rl = checkRateLimit(String(body.email).trim());
   if (!rl.ok) {
@@ -882,6 +1044,7 @@ function handleTrainingRequest(body) {
     group: group,
     notes: notes,
     language: language,
+    theme: theme,
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + cfg.pendingTtlMinutes * 60 * 1000).toISOString(),
   };
@@ -901,7 +1064,12 @@ function handleTrainingRequest(body) {
   emailBody += findUsBlock_(cfg, language);
   emailBody += '— ' + emailNameOf_(cfg);
 
-  MailApp.sendEmail(pending.email, subject, emailBody);
+  const htmlBody = emailShell_(cfg, language, name,
+    emailParagraph_(tr(language, 'trConfirmIntro'))
+    + emailButton_(tr(language, 'trConfirmPageButton'), confirmUrl)
+    + emailNote_(tr(language, 'expiresIn', { n: cfg.pendingTtlMinutes })));
+
+  MailApp.sendEmail(pending.email, subject, emailBody, { htmlBody: htmlBody });
 
   return jsonResponse({ status: 'pending', message: 'Check your email to confirm the request.' });
 }
@@ -924,7 +1092,7 @@ function handleConfirm(token) {
   // Check expiry
   if (new Date() > new Date(pending.expiresAt)) {
     props.deleteProperty('pending_' + token);
-    return htmlResponse('Link expired', 'This confirmation link has expired. Please book again.');
+    return htmlResponse('Link expired', 'This confirmation link has expired. Please book again.', pending.theme || '');
   }
 
   // Build start/end
@@ -946,7 +1114,7 @@ function handleConfirm(token) {
   if (!range || !isSlotAvailable_(busyOfDay, range.fromMin, range.toMin, startMinutes, endMinutes)) {
     props.deleteProperty('pending_' + token);
     return htmlResponse('Slot no longer available',
-      'Sorry, this slot was just booked by someone else. Please go back and pick another time.');
+      'Sorry, this slot was just booked by someone else. Please go back and pick another time.', pending.theme || '');
   }
 
   // Create calendar event
@@ -954,6 +1122,7 @@ function handleConfirm(token) {
   const endTimeStr = formatTime(endMinutes);
   const courtLabel = 'Court ' + pending.courtId;
   const eventTitle = pending.name + ' — ' + courtLabel;
+  const priceStr = formatPrice_(calculateBookingPrice_(cfg, pending), cfg);
 
   const eventDescription = [
     'Booked by: ' + pending.name,
@@ -961,6 +1130,7 @@ function handleConfirm(token) {
     pending.phone ? 'Phone: ' + pending.phone : '',
     courtLabel,
     'Time: ' + timeStr + ' – ' + endTimeStr,
+    tr(pending.language || 'en', 'total') + ': ' + priceStr,
     cfg.contact && cfg.contact.googleMapsUrl ? 'Map: ' + cfg.contact.googleMapsUrl : '',
   ].filter(Boolean).join('\n');
 
@@ -997,6 +1167,7 @@ function handleConfirm(token) {
     email: pending.email,
     phone: pending.phone,
     language: pending.language,
+    theme: pending.theme || '',
     date: pending.date,
     startTime: formatTime(startMinutes),
     durationMinutes: durationMinutes,
@@ -1025,13 +1196,25 @@ function handleConfirm(token) {
   emailBody += tr(lang, 'confirmedIntro') + '\n\n';
   emailBody += tr(lang, 'date') + ': ' + friendlyDate + '\n';
   emailBody += tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr + '\n';
+  emailBody += tr(lang, 'total') + ': ' + priceStr + '\n';
   emailBody += localCourtLabel + '\n';
   emailBody += '\n' + tr(lang, 'inviteNote') + '\n\n';
   emailBody += tr(lang, 'needCancel') + '\n' + cancelUrl + '\n\n';
   emailBody += findUsBlock_(cfg, lang);
   emailBody += '— ' + emailNameOf_(cfg);
 
-  MailApp.sendEmail(pending.email, subject, emailBody);
+  const htmlBody = emailShell_(cfg, lang, pending.name,
+    emailParagraph_(tr(lang, 'confirmedIntro'))
+    + emailDetailsHtml_([
+        { label: tr(lang, 'date'), value: friendlyDate },
+        { label: tr(lang, 'time'), value: timeStr + ' – ' + endTimeStr },
+        { label: tr(lang, 'total'), value: priceStr },
+        { label: tr(lang, 'court'), value: String(pending.courtId) },
+      ])
+    + emailParagraph_(tr(lang, 'inviteNote'))
+    + emailCancelLine_(lang, cancelUrl));
+
+  MailApp.sendEmail(pending.email, subject, emailBody, { htmlBody: htmlBody });
 
   // Notify admin(s).
   notifyAdmins(cfg, pending, 'created');
@@ -1044,7 +1227,8 @@ function handleConfirm(token) {
       email: htmlEscape(pending.email),
       url: htmlEscape(cfg.siteUrl),
       site: htmlEscape(heroNameOf_(cfg)),
-    })
+    }),
+    pending.theme || ''
   );
 }
 
@@ -1065,7 +1249,7 @@ function handleConfirmTraining(token) {
 
   if (new Date() > new Date(pending.expiresAt)) {
     props.deleteProperty('pendingTraining_' + token);
-    return htmlResponse('Link expired', 'This confirmation link has expired. Please submit your request again.');
+    return htmlResponse('Link expired', 'This confirmation link has expired. Please submit your request again.', pending.theme || '');
   }
 
   // Create Google Task. Wrapped in try/catch because the Tasks REST call
@@ -1093,7 +1277,8 @@ function handleConfirmTraining(token) {
       phone: htmlEscape(pending.phone),
       url: htmlEscape(cfg.siteUrl),
       site: htmlEscape(heroNameOf_(cfg)),
-    })
+    }),
+    pending.theme || ''
   );
 }
 
@@ -1192,7 +1377,16 @@ function handleCancel(cancelToken) {
   emailBody += findUsBlock_(cfg, lang);
   emailBody += '— ' + emailNameOf_(cfg);
 
-  MailApp.sendEmail(booking.email, subject, emailBody);
+  const htmlBody = emailShell_(cfg, lang, booking.name,
+    emailParagraph_(tr(lang, 'cancelledIntro'))
+    + emailDetailsHtml_([
+        { label: tr(lang, 'date'), value: friendlyDate },
+        { label: tr(lang, 'time'), value: timeStr + ' – ' + endTimeStr },
+        { label: tr(lang, 'court'), value: String(booking.courtId) },
+      ])
+    + emailButton_(tr(lang, 'bookAgainButton'), cfg.siteUrl));
+
+  MailApp.sendEmail(booking.email, subject, emailBody, { htmlBody: htmlBody });
 
   // Notify admin(s).
   notifyAdmins(cfg, booking, 'cancelled');
@@ -1210,8 +1404,169 @@ function handleCancel(cancelToken) {
       time: htmlEscape(timeStr),
       email: htmlEscape(booking.email),
       url: htmlEscape(cfg.siteUrl),
-    })
+    }),
+    booking.theme || ''
   );
+}
+
+// ============================================================
+// Interstitial confirmation pages
+// ============================================================
+// The confirm/cancel links in our emails are plain GET URLs. Mail providers
+// and security gateways (Gmail, Microsoft Safe Links, Proofpoint, antivirus,
+// link-preview bots) routinely PREFETCH every URL in an incoming email to
+// scan it — issuing real GET requests. If those GETs performed the action
+// directly, a passive scan would silently confirm or CANCEL a booking with no
+// human involved (the "phantom cancellation" bug). So each email link now
+// opens one of these read-only pages, and the mutation happens only when the
+// visitor clicks the button, which submits a POST. Bots issue GETs and don't
+// submit forms, so they can no longer trigger the action.
+
+// Shared <style> for the served confirm / cancel / result pages. Colors come
+// from CSS custom properties so one declaration block covers both themes:
+//   - dark is the default (matches the site's default look),
+//   - an explicit data-theme="light"/"dark" on <html> forces that theme
+//     (threaded from the visitor's choice on the site — see normalizeTheme_),
+//   - when no explicit theme is known, prefers-color-scheme decides.
+// Fonts are sized up deliberately: the previous fixed page rendered too small
+// to read comfortably on phones.
+function pageStyleBlock_() {
+  return '<style>'
+    + ':root{--bg:#0a0a0a;--text:#e8e8e8;--muted:#888;--accent:#c5e84c;'
+    + '--btn-bg:#c5e84c;--btn-text:#0a0a0a;--card-border:#333;}'
+    + ':root[data-theme="light"]{--bg:#ffffff;--text:#18181b;--muted:#71717a;--accent:#7a9c08;'
+    + '--btn-bg:#aac82d;--btn-text:#18181b;--card-border:#d4d4d8;}'
+    + '@media(prefers-color-scheme:light){:root:not([data-theme]){--bg:#ffffff;--text:#18181b;'
+    + '--muted:#71717a;--accent:#7a9c08;--btn-bg:#aac82d;--btn-text:#18181b;--card-border:#d4d4d8;}}'
+    + 'html{-webkit-text-size-adjust:100%;}'
+    + 'body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:18px;'
+    + 'line-height:1.6;max-width:520px;margin:0 auto;padding:48px 22px;'
+    + 'background:var(--bg);color:var(--text);}'
+    + 'h1{color:var(--accent);font-size:1.6em;line-height:1.25;margin:0 0 .5em;}'
+    + 'p{font-size:1.05em;margin:.7em 0;}'
+    + 'a{color:var(--accent);}'
+    + '.card{margin:22px 0;padding:18px 20px;border:1px solid var(--card-border);'
+    + 'border-radius:10px;line-height:1.9;font-size:1.05em;}'
+    + 'button{font-size:1.05em;padding:14px 26px;border:0;border-radius:10px;'
+    + 'background:var(--btn-bg);color:var(--btn-text);font-weight:700;cursor:pointer;margin-top:10px;}'
+    + 'button:hover{filter:brightness(1.05);}'
+    + '</style>';
+}
+
+// Returns the <html> theme attribute. '' (unknown) → no attribute, so the page
+// honors the visitor's prefers-color-scheme instead of forcing a theme.
+function themeAttr_(theme) {
+  const t = normalizeTheme_(theme);
+  return t ? ' data-theme="' + t + '"' : '';
+}
+
+function actionPage_(opts) {
+  let siteName = FALLBACK_SITE_NAME;
+  try { siteName = titleNameOf_(getSettings()); } catch (e) { /* settings not seeded */ }
+  const execUrl = ScriptApp.getService().getUrl();
+
+  let detailsHtml = '';
+  if (opts.details && opts.details.length) {
+    detailsHtml = '<div class="card">' + opts.details.map(function (d) {
+      return '<div><strong>' + htmlEscape(d.label) + ':</strong> ' + htmlEscape(d.value) + '</div>';
+    }).join('') + '</div>';
+  }
+
+  const html = '<!DOCTYPE html><html' + themeAttr_(opts.theme) + '><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<base target="_top">'
+    + '<title>' + htmlEscape(opts.title) + ' — ' + htmlEscape(siteName) + '</title>'
+    + pageStyleBlock_()
+    + '</head><body>'
+    + '<h1>' + htmlEscape(opts.title) + '</h1>'
+    + '<p>' + htmlEscape(opts.intro) + '</p>'
+    + detailsHtml
+    + '<form method="post" action="' + htmlEscape(execUrl) + '" target="_top">'
+    + '<input type="hidden" name="action" value="' + htmlEscape(opts.actionValue) + '">'
+    + '<input type="hidden" name="' + htmlEscape(opts.tokenName) + '" value="' + htmlEscape(opts.tokenValue) + '">'
+    + '<button type="submit">' + htmlEscape(opts.buttonLabel) + '</button>'
+    + '</form>'
+    + '</body></html>';
+
+  return HtmlService.createHtmlOutput(html);
+}
+
+function confirmBookingPage_(token) {
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty('pending_' + token);
+  if (!raw) {
+    return htmlResponse('Booking not found', 'This confirmation link is invalid or has expired.');
+  }
+  const pending = JSON.parse(raw);
+  if (new Date() > new Date(pending.expiresAt)) {
+    return htmlResponse('Link expired', 'This confirmation link has expired. Please book again.', pending.theme || '');
+  }
+  const lang = pending.language || 'en';
+  const times = readBookingTimes_(pending);
+  const startDate = new Date(pending.date + 'T' + formatTime(times.startMinutes) + ':00');
+  return actionPage_({
+    title: tr(lang, 'confirmPageTitle'),
+    intro: tr(lang, 'confirmPageIntro'),
+    details: [
+      { label: tr(lang, 'date'), value: formatFriendlyDateLang(startDate, lang) },
+      { label: tr(lang, 'time'), value: formatTime(times.startMinutes) + ' – ' + formatTime(times.startMinutes + times.durationMinutes) },
+      { label: tr(lang, 'court'), value: String(pending.courtId) },
+    ],
+    actionValue: 'confirmBooking',
+    tokenName: 'token',
+    tokenValue: token,
+    buttonLabel: tr(lang, 'confirmPageButton'),
+    theme: pending.theme || '',
+  });
+}
+
+function cancelBookingPage_(cancelToken) {
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty('confirmed_' + cancelToken);
+  if (!raw) {
+    return htmlResponse('Booking not found', 'This cancellation link is invalid or the booking was already cancelled.');
+  }
+  const booking = JSON.parse(raw);
+  const lang = booking.language || 'en';
+  const times = readBookingTimes_(booking);
+  const startDate = new Date(booking.date + 'T' + formatTime(times.startMinutes) + ':00');
+  return actionPage_({
+    title: tr(lang, 'cancelPageTitle'),
+    intro: tr(lang, 'cancelPageIntro'),
+    details: [
+      { label: tr(lang, 'date'), value: formatFriendlyDateLang(startDate, lang) },
+      { label: tr(lang, 'time'), value: formatTime(times.startMinutes) + ' – ' + formatTime(times.startMinutes + times.durationMinutes) },
+      { label: tr(lang, 'court'), value: String(booking.courtId) },
+    ],
+    actionValue: 'cancelBooking',
+    tokenName: 'cancelToken',
+    tokenValue: cancelToken,
+    buttonLabel: tr(lang, 'cancelPageButton'),
+    theme: booking.theme || '',
+  });
+}
+
+function confirmTrainingPage_(token) {
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty('pendingTraining_' + token);
+  if (!raw) {
+    return htmlResponse('Request not found', 'This confirmation link is invalid or has expired.');
+  }
+  const pending = JSON.parse(raw);
+  if (new Date() > new Date(pending.expiresAt)) {
+    return htmlResponse('Link expired', 'This confirmation link has expired. Please submit your request again.', pending.theme || '');
+  }
+  const lang = pending.language || 'en';
+  return actionPage_({
+    title: tr(lang, 'trConfirmPageTitle'),
+    intro: tr(lang, 'trConfirmPageIntro'),
+    details: [],
+    actionValue: 'confirmTrainingRequest',
+    tokenName: 'token',
+    tokenValue: token,
+    buttonLabel: tr(lang, 'trConfirmPageButton'),
+    theme: pending.theme || '',
+  });
 }
 
 // ============================================================
@@ -1343,6 +1698,7 @@ function fireReminder(e) {
   const timeStr = formatTime(remTimes.startMinutes);
   const endTimeStr = formatTime(remTimes.startMinutes + remTimes.durationMinutes);
   const courtLabel = tr(lang, 'court') + ' ' + booking.courtId;
+  const priceStr = formatPrice_(calculateBookingPrice_(cfg, booking), cfg);
 
   const scriptUrl = ScriptApp.getService().getUrl();
   const cancelUrl = scriptUrl + '?cancel=' + triggerInfo.cancelToken;
@@ -1355,13 +1711,25 @@ function fireReminder(e) {
   emailBody += bodyIntro + '\n\n';
   emailBody += tr(lang, 'date') + ': ' + friendlyDate + '\n';
   emailBody += tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr + '\n';
+  emailBody += tr(lang, 'total') + ': ' + priceStr + '\n';
   emailBody += courtLabel + '\n';
   emailBody += '\n' + tr(lang, 'needCancel') + '\n' + cancelUrl + '\n\n';
   emailBody += tr(lang, 'seeYou') + '\n\n';
   emailBody += findUsBlock_(cfg, lang);
   emailBody += '— ' + emailNameOf_(cfg);
 
-  MailApp.sendEmail(booking.email, subject, emailBody);
+  const htmlBody = emailShell_(cfg, lang, booking.name,
+    emailParagraph_(bodyIntro)
+    + emailDetailsHtml_([
+        { label: tr(lang, 'date'), value: friendlyDate },
+        { label: tr(lang, 'time'), value: timeStr + ' – ' + endTimeStr },
+        { label: tr(lang, 'total'), value: priceStr },
+        { label: tr(lang, 'court'), value: String(booking.courtId) },
+      ])
+    + emailCancelLine_(lang, cancelUrl)
+    + emailParagraph_(tr(lang, 'seeYou')));
+
+  MailApp.sendEmail(booking.email, subject, emailBody, { htmlBody: htmlBody });
 
   // Clean up this trigger
   cleanupTrigger(triggerId);
@@ -1435,6 +1803,41 @@ function readBookingTimes_(rec) {
     throw new Error('Record missing duration.');
   }
   return { startMinutes: startMinutes, durationMinutes: durationMinutes };
+}
+
+// Total price for a booking, summing each price band's overlap with the
+// booked interval. A non-empty per-court override array fully replaces the
+// default bands (it is not merged). Minutes not covered by any band cost 0.
+// Never throws: malformed bands/records resolve to 0.
+function calculateBookingPrice_(cfg, booking) {
+  let times;
+  try {
+    times = readBookingTimes_(booking);
+  } catch (err) {
+    return 0;
+  }
+  const startMin = times.startMinutes;
+  const endMin = times.startMinutes + times.durationMinutes;
+  if (isNaN(startMin) || isNaN(endMin) || endMin <= startMin) return 0;
+  const override = cfg.courtPriceOverrides && cfg.courtPriceOverrides[booking.courtId];
+  const bands = (Array.isArray(override) && override.length) ? override : cfg.courtPrices;
+  if (!Array.isArray(bands)) return 0;
+  let total = 0;
+  for (const band of bands) {
+    const bandFrom = parseTime(band.from);
+    const bandTo = parseTime(band.to);
+    const price = Number(band.price);
+    if (isNaN(bandFrom) || isNaN(bandTo) || !isFinite(price)) continue;
+    const overlap = Math.min(endMin, bandTo) - Math.max(startMin, bandFrom);
+    if (overlap > 0) total += (overlap / 60) * price;
+  }
+  return total;
+}
+
+// Format a price as "1600 RSD" — rounded amount, space, currency code.
+function formatPrice_(amount, cfg) {
+  const cur = (cfg && cfg.currency) || 'RSD';
+  return Math.round(amount) + ' ' + cur;
 }
 
 // Pull busy intervals for one calendar on one local date, expressed as
@@ -1533,6 +1936,10 @@ function notifyAdmins(cfg, booking, kind) {
     let body = verb + '\n\n';
     body += 'Date: ' + booking.date + '\n';
     body += 'Time: ' + timeStr + ' – ' + endTimeStr + '\n';
+    if (kind !== 'cancelled') {
+      body += tr(booking.language || 'en', 'total') + ': '
+        + formatPrice_(calculateBookingPrice_(cfg, booking), cfg) + '\n';
+    }
     body += courtLabel + '\n';
     body += '\nClient: ' + booking.name + '\n';
     body += 'Email: ' + booking.email + '\n';
@@ -1594,7 +2001,9 @@ function jsonResponse(data, statusCode) {
   return output;
 }
 
-function htmlResponse(title, body) {
+// `theme` is optional ('light'/'dark'); omit it on error/not-found pages where
+// the visitor's choice isn't known, and the page falls back to system pref.
+function htmlResponse(title, body, theme) {
   // Use a cosmetic fallback if settings aren't yet seeded.
   let siteName = FALLBACK_SITE_NAME;
   try {
@@ -1602,16 +2011,12 @@ function htmlResponse(title, body) {
     siteName = titleNameOf_(cfg);
   } catch (e) { /* settings not initialized — use fallback */ }
 
-  const html = '<!DOCTYPE html><html><head><meta charset="utf-8">'
+  const html = '<!DOCTYPE html><html' + themeAttr_(theme) + '><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1">'
     + '<base target="_top">'
     + '<title>' + title + ' — ' + siteName + '</title>'
-    + '<style>'
-    + 'body{font-family:system-ui,sans-serif;max-width:480px;margin:60px auto;padding:0 20px;'
-    + 'background:#0a0a0a;color:#e0e0e0;}'
-    + 'h1{color:#c5e84c;font-size:1.5em;}'
-    + 'a{color:#c5e84c;}'
-    + '</style></head><body>'
+    + pageStyleBlock_()
+    + '</head><body>'
     + '<h1>' + title + '</h1>'
     + '<p>' + body + '</p>'
     + '</body></html>';
