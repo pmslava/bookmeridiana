@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Tennis Kosmos</title>
+<!--
+  Email action wrapper. Confirm / cancel links in our emails point here
+  (e.g. /a.html?confirm=<token>) instead of the raw Apps Script exec URL.
+  We iframe the exec page so it renders inside teniskosmos.com: Google's
+  "This application was created by a Google Apps Script user" banner only
+  appears on the TOP-level script.google.com page, so framing hides it.
+  The exec page is served with XFrameOptionsMode.ALLOWALL + ?embed=1 (see
+  actionPage_ / doGet in Code.gs).
+-->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #0f1115; }
+  @media (prefers-color-scheme: light) { html, body { background: #f4f4f5; } }
+  #frame { position: fixed; inset: 0; width: 100%; height: 100vh; height: 100dvh; border: 0; }
+  #msg {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #9aa0a6; text-align: center; padding: 2.5rem 1.5rem; font-size: 1.05rem;
+  }
+</style>
+</head>
+<body>
+<div id="msg">Loading&hellip;</div>
+<noscript><div style="font-family:system-ui,sans-serif;color:#9aa0a6;text-align:center;padding:2.5rem 1.5rem">Please enable JavaScript to continue.</div></noscript>
+<script>
+(function () {
+  var ACTIONS = ['confirm', 'cancel', 'confirmTraining'];
+  var TOKEN_RE = /^[0-9a-fA-F-]{8,64}$/;
+  var msg = document.getElementById('msg');
+  function fail(text) { if (msg) msg.textContent = text; }
+
+  var params = new URLSearchParams(location.search);
+  var action = null, token = null;
+  for (var i = 0; i < ACTIONS.length; i++) {
+    var v = params.get(ACTIONS[i]);
+    if (v) { action = ACTIONS[i]; token = v; break; }
+  }
+  if (!action || !TOKEN_RE.test(token)) { fail('This link is not valid.'); return; }
+
+  fetch('config.json', { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (cfg) {
+      var exec = cfg && cfg.appsScriptUrl;
+      if (!exec) { fail('Configuration error. Please try again later.'); return; }
+      var sep = exec.indexOf('?') === -1 ? '?' : '&';
+      var src = exec + sep + action + '=' + encodeURIComponent(token) + '&embed=1';
+      var f = document.createElement('iframe');
+      f.id = 'frame';
+      f.title = 'Tennis Kosmos';
+      f.src = src;
+      if (msg) msg.remove();
+      document.body.appendChild(f);
+    })
+    .catch(function () { fail('Could not load. Please check your connection and retry.'); });
+})();
+</script>
+</body>
+</html>

@@ -599,6 +599,9 @@ function formatFriendlyDateLang(date, lang) {
 function doGet(e) {
   try {
     const params = e ? e.parameter : {};
+    // Set by the public-site wrapper (a.html) when it iframes an action page,
+    // so the page keeps navigation inside the frame and allows being framed.
+    const embed = params.embed === '1';
 
     // --- Admin page (served only from the Admin deployment) ---
     // The deployment-level "Only myself" setting is the primary gate.
@@ -627,7 +630,7 @@ function doGet(e) {
       if (!/^[0-9a-fA-F-]{8,64}$/.test(params.confirm)) {
         return htmlResponse('Invalid link', 'This link is not valid.');
       }
-      return confirmBookingPage_(params.confirm);
+      return confirmBookingPage_(params.confirm, embed);
     }
 
     // --- Confirm a pending training request ---
@@ -635,7 +638,7 @@ function doGet(e) {
       if (!/^[0-9a-fA-F-]{8,64}$/.test(params.confirmTraining)) {
         return htmlResponse('Invalid link', 'This link is not valid.');
       }
-      return confirmTrainingPage_(params.confirmTraining);
+      return confirmTrainingPage_(params.confirmTraining, embed);
     }
 
     // --- Cancel a confirmed booking ---
@@ -643,7 +646,7 @@ function doGet(e) {
       if (!/^[0-9a-fA-F-]{8,64}$/.test(params.cancel)) {
         return htmlResponse('Invalid link', 'This link is not valid.');
       }
-      return cancelBookingPage_(params.cancel);
+      return cancelBookingPage_(params.cancel, embed);
     }
 
     // --- Default: return availability ---
@@ -949,8 +952,7 @@ function handleBookingRequest(body) {
 
   // Send confirmation email (in the client's chosen language)
   const lang = pending.language;
-  const scriptUrl = ScriptApp.getService().getUrl();
-  const confirmUrl = scriptUrl + '?confirm=' + token;
+  const confirmUrl = actionWrapperUrl_(cfg, 'confirm=' + token);
   const friendlyDate = formatFriendlyDateLang(startDate, lang);
   const timeStr = formatTime(startMinutes);
   const endTimeStr = formatTime(endMinutes);
@@ -1068,8 +1070,7 @@ function handleTrainingRequest(body) {
   props.setProperty('pendingTraining_' + token, JSON.stringify(pending));
 
   // Send confirmation email (in client's chosen language)
-  const scriptUrl = ScriptApp.getService().getUrl();
-  const confirmUrl = scriptUrl + '?confirmTraining=' + token;
+  const confirmUrl = actionWrapperUrl_(cfg, 'confirmTraining=' + token);
 
   const subject = tr(language, 'trConfirmSubject');
   let emailBody = tr(language, 'hi') + ' ' + name + ',\n\n';
@@ -1147,8 +1148,7 @@ function handleConfirm(token) {
   // calendar invitation (sendUpdates:'all' below), and that single invite is
   // the confirmation email — so it has to carry the cancel link too.
   const cancelToken = Utilities.getUuid();
-  const scriptUrl = ScriptApp.getService().getUrl();
-  const cancelUrl = scriptUrl + '?cancel=' + cancelToken;
+  const cancelUrl = actionWrapperUrl_(cfg, 'cancel=' + cancelToken);
 
   // Everything the client needs goes into the description, because Google builds
   // the invitation email from the event's own fields — we cannot style or add to
@@ -1476,10 +1476,25 @@ function themeAttr_(theme) {
   return t ? ' data-theme="' + t + '"' : '';
 }
 
+// Email action links (confirm/cancel) point at a thin wrapper page on the
+// public site instead of the raw exec URL. The wrapper iframes the exec page,
+// and Google's "This application was created by a Google Apps Script user"
+// banner only renders on the TOP-level script.google.com page — so loading the
+// page inside an iframe on our own domain suppresses it. `query` is the exec
+// query string the wrapper forwards, e.g. 'confirm=<token>'.
+function actionWrapperUrl_(cfg, query) {
+  const base = ((cfg && cfg.siteUrl) || 'https://teniskosmos.com/').replace(/\/+$/, '');
+  return base + '/a.html?' + query;
+}
+
 function actionPage_(opts) {
   let siteName = FALLBACK_SITE_NAME;
   try { siteName = titleNameOf_(getSettings()); } catch (e) { /* settings not seeded */ }
   const execUrl = ScriptApp.getService().getUrl();
+  // When embedded in the wrapper iframe, keep navigation INSIDE the iframe
+  // (_self) so the POST result renders framed and the banner never appears.
+  // Standalone (direct exec URL) the page is top-level, so _top is correct.
+  const navTarget = opts.embed ? '_self' : '_top';
 
   let detailsHtml = '';
   if (opts.details && opts.details.length) {
@@ -1490,14 +1505,14 @@ function actionPage_(opts) {
 
   const html = '<!DOCTYPE html><html' + themeAttr_(opts.theme) + '><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1">'
-    + '<base target="_top">'
+    + '<base target="' + navTarget + '">'
     + '<title>' + htmlEscape(opts.title) + ' — ' + htmlEscape(siteName) + '</title>'
     + pageStyleBlock_()
     + '</head><body>'
     + '<h1>' + htmlEscape(opts.title) + '</h1>'
     + '<p>' + htmlEscape(opts.intro) + '</p>'
     + detailsHtml
-    + '<form method="post" action="' + htmlEscape(execUrl) + '" target="_top">'
+    + '<form method="post" action="' + htmlEscape(execUrl) + '" target="' + navTarget + '">'
     + '<input type="hidden" name="action" value="' + htmlEscape(opts.actionValue) + '">'
     + '<input type="hidden" name="' + htmlEscape(opts.tokenName) + '" value="' + htmlEscape(opts.tokenValue) + '">'
     + '<button type="submit">' + htmlEscape(opts.buttonLabel) + '</button>'
@@ -1508,11 +1523,17 @@ function actionPage_(opts) {
   // an iframe wrapper, and a <meta viewport> in the body does NOT reach the
   // outer Google page. Without this the page renders at desktop width on phones
   // (tiny font + big side margins).
-  return HtmlService.createHtmlOutput(html)
+  const out = HtmlService.createHtmlOutput(html)
+    .setTitle(opts.title + ' — ' + siteName)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  // Only allow framing in embed mode (served via the wrapper). The action is
+  // POST-only and bound to an unguessable per-booking token, so an attacker
+  // framing this page cannot target another user's booking.
+  if (opts.embed) out.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  return out;
 }
 
-function confirmBookingPage_(token) {
+function confirmBookingPage_(token, embed) {
   const props = PropertiesService.getScriptProperties();
   const raw = props.getProperty('pending_' + token);
   if (!raw) {
@@ -1541,10 +1562,11 @@ function confirmBookingPage_(token) {
     tokenValue: token,
     buttonLabel: tr(lang, 'confirmPageButton'),
     theme: pending.theme || '',
+    embed: !!embed,
   });
 }
 
-function cancelBookingPage_(cancelToken) {
+function cancelBookingPage_(cancelToken, embed) {
   const props = PropertiesService.getScriptProperties();
   const raw = props.getProperty('confirmed_' + cancelToken);
   if (!raw) {
@@ -1567,10 +1589,11 @@ function cancelBookingPage_(cancelToken) {
     tokenValue: cancelToken,
     buttonLabel: tr(lang, 'cancelPageButton'),
     theme: booking.theme || '',
+    embed: !!embed,
   });
 }
 
-function confirmTrainingPage_(token) {
+function confirmTrainingPage_(token, embed) {
   const props = PropertiesService.getScriptProperties();
   const raw = props.getProperty('pendingTraining_' + token);
   if (!raw) {
@@ -1590,6 +1613,7 @@ function confirmTrainingPage_(token) {
     tokenValue: token,
     buttonLabel: tr(lang, 'trConfirmPageButton'),
     theme: pending.theme || '',
+    embed: !!embed,
   });
 }
 
@@ -1724,8 +1748,7 @@ function fireReminder(e) {
   const courtLabel = tr(lang, 'court') + ' ' + booking.courtId;
   const priceStr = formatPrice_(calculateBookingPrice_(cfg, booking), cfg);
 
-  const scriptUrl = ScriptApp.getService().getUrl();
-  const cancelUrl = scriptUrl + '?cancel=' + triggerInfo.cancelToken;
+  const cancelUrl = actionWrapperUrl_(cfg, 'cancel=' + triggerInfo.cancelToken);
 
   const isDayBefore = triggerInfo.type === 'dayBefore';
   const subject = tr(lang, isDayBefore ? 'reminderSubjectDay' : 'reminderSubjectHours');
@@ -2048,6 +2071,12 @@ function htmlResponse(title, body, theme) {
   // an iframe wrapper, and a <meta viewport> in the body does NOT reach the
   // outer Google page. Without this the page renders at desktop width on phones
   // (tiny font + big side margins).
+  // ALLOWALL so the result/error pages in the confirm/cancel flow render inside
+  // the public-site wrapper iframe (the POST that produces them carries no embed
+  // flag). These pages are informational and trigger no actions, so framing is
+  // harmless.
   return HtmlService.createHtmlOutput(html)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    .setTitle(title + ' — ' + siteName)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
