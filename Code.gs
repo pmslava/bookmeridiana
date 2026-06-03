@@ -507,11 +507,26 @@ function findUsBlock_(cfg, lang) {
 
 var EMAIL_FONT_ = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
+// Brand logo at the top of every HTML email. Served from the site root
+// (GitHub Pages → teniskosmos.com/logo.png) and referenced by absolute URL.
+// Returns '' if no siteUrl is configured so we never emit a broken image.
+// Plain-text emails can't show it; only the HTML body carries the logo.
+function emailLogoHtml_(cfg) {
+  var base = (cfg && cfg.siteUrl) ? String(cfg.siteUrl).replace(/\/+$/, '') : '';
+  if (!base) return '';
+  return '<div style="text-align:center;margin:0 0 20px;">'
+    + '<img src="' + htmlEscape(base + '/logo.png') + '" width="80" height="80" '
+    + 'alt="' + htmlEscape(emailNameOf_(cfg)) + '" '
+    + 'style="display:block;width:80px;height:80px;margin:0 auto;border:0;outline:none;text-decoration:none;" />'
+    + '</div>';
+}
+
 // Wraps inner content in the greeting + find-us + signature chrome.
 function emailShell_(cfg, lang, name, innerHtml) {
   return '<div style="margin:0;padding:0;background:#f4f4f5;">'
     + '<div style="max-width:520px;margin:0 auto;padding:24px 20px;font-family:' + EMAIL_FONT_ + ';'
     + 'font-size:16px;line-height:1.6;color:#18181b;">'
+    + emailLogoHtml_(cfg)
     + '<p style="margin:0 0 16px;">' + htmlEscape(tr(lang, 'hi')) + ' ' + htmlEscape(name) + ',</p>'
     + innerHtml
     + findUsBlockHtml_(cfg, lang)
@@ -966,7 +981,7 @@ function handleBookingRequest(body) {
     + emailButton_(tr(lang, 'confirmPageButton'), confirmUrl)
     + emailNote_(tr(lang, 'expiresIn', { n: cfg.pendingTtlMinutes })));
 
-  MailApp.sendEmail(body.email, subject, emailBody, { htmlBody: htmlBody });
+  MailApp.sendEmail(body.email, subject, emailBody, { name: emailNameOf_(cfg), htmlBody: htmlBody });
 
   return jsonResponse({ status: 'pending', message: 'Check your email to confirm the booking.' });
 }
@@ -1069,7 +1084,7 @@ function handleTrainingRequest(body) {
     + emailButton_(tr(language, 'trConfirmPageButton'), confirmUrl)
     + emailNote_(tr(language, 'expiresIn', { n: cfg.pendingTtlMinutes })));
 
-  MailApp.sendEmail(pending.email, subject, emailBody, { htmlBody: htmlBody });
+  MailApp.sendEmail(pending.email, subject, emailBody, { name: emailNameOf_(cfg), htmlBody: htmlBody });
 
   return jsonResponse({ status: 'pending', message: 'Check your email to confirm the request.' });
 }
@@ -1387,7 +1402,7 @@ function handleCancel(cancelToken) {
       ])
     + emailButton_(tr(lang, 'bookAgainButton'), cfg.siteUrl));
 
-  MailApp.sendEmail(booking.email, subject, emailBody, { htmlBody: htmlBody });
+  MailApp.sendEmail(booking.email, subject, emailBody, { name: emailNameOf_(cfg), htmlBody: htmlBody });
 
   // Notify admin(s).
   notifyAdmins(cfg, booking, 'cancelled');
@@ -1738,7 +1753,7 @@ function fireReminder(e) {
     + emailCancelLine_(lang, cancelUrl)
     + emailParagraph_(tr(lang, 'seeYou')));
 
-  MailApp.sendEmail(booking.email, subject, emailBody, { htmlBody: htmlBody });
+  MailApp.sendEmail(booking.email, subject, emailBody, { name: emailNameOf_(cfg), htmlBody: htmlBody });
 
   // Clean up this trigger
   cleanupTrigger(triggerId);
@@ -1956,7 +1971,7 @@ function notifyAdmins(cfg, booking, kind) {
     body += findUsBlock_(cfg);
     body += '\n— ' + emailNameOf_(cfg);
 
-    MailApp.sendEmail(unique.join(','), subject, body);
+    MailApp.sendEmail(unique.join(','), subject, body, { name: emailNameOf_(cfg) });
   } catch (err) {
     Logger.log('notifyAdmins error: ' + err.message);
   }
@@ -1998,7 +2013,7 @@ function notifyAdminsTraining(cfg, req) {
     body += findUsBlock_(cfg);
     body += '\n— ' + emailNameOf_(cfg);
 
-    MailApp.sendEmail(unique.join(','), subject, body);
+    MailApp.sendEmail(unique.join(','), subject, body, { name: emailNameOf_(cfg) });
   } catch (err) {
     Logger.log('notifyAdminsTraining error: ' + err.message);
   }
