@@ -507,17 +507,21 @@ function findUsBlock_(cfg, lang) {
 
 var EMAIL_FONT_ = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
-// Brand logo at the top of every HTML email. Served from the site root
-// (GitHub Pages → teniskosmos.com/logo.png) and referenced by absolute URL.
-// Returns '' if no siteUrl is configured so we never emit a broken image.
-// Plain-text emails can't show it; only the HTML body carries the logo.
+// Brand wordmark at the top of every HTML email, rendered as styled TEXT
+// (not an image) so it survives the recipient's "show remote images" gate
+// and needs no network round-trip. Mirrors the booking-page hero wordmark:
+// accent-colored first word + dark remainder, system font stack. Colors are
+// the site's LIGHT theme (the dark-theme neon is unreadable on the light
+// email background); they also lighten gracefully under client dark-mode.
 function emailLogoHtml_(cfg) {
-  var base = (cfg && cfg.siteUrl) ? String(cfg.siteUrl).replace(/\/+$/, '') : '';
-  if (!base) return '';
-  return '<div style="text-align:center;margin:0 0 20px;">'
-    + '<img src="' + htmlEscape(base + '/logo.png') + '" width="80" height="80" '
-    + 'alt="' + htmlEscape(emailNameOf_(cfg)) + '" '
-    + 'style="display:block;width:80px;height:80px;margin:0 auto;border:0;outline:none;text-decoration:none;" />'
+  var name = emailNameOf_(cfg);
+  var sp = name.indexOf(' ');
+  var first = sp > 0 ? name.slice(0, sp) : name;
+  var rest = sp > 0 ? name.slice(sp + 1) : '';
+  return '<div style="text-align:center;margin:0 0 24px;font-family:' + EMAIL_FONT_ + ';'
+    + 'font-size:30px;font-weight:700;letter-spacing:-0.02em;line-height:1.1;">'
+    + '<span style="color:#7a9c08;">' + htmlEscape(first) + '</span>'
+    + (rest ? ' <span style="color:#18181b;">' + htmlEscape(rest) + '</span>' : '')
     + '</div>';
 }
 
