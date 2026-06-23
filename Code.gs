@@ -1101,134 +1101,202 @@ function handleTrainingRequest(body) {
 function handleConfirm(token) {
   const cfg = getSettings();
   const props = PropertiesService.getScriptProperties();
-  const raw = props.getProperty('pending_' + token);
 
-  if (!raw) {
-    return htmlResponse('Booking not found', 'This confirmation link is invalid or has expired.');
+  // Serialize the entire read → re-check → insert → delete region. Apps Script
+  // runs doPost concurrently, so without this lock a double-click on the confirm
+  // button, a mail-app/browser POST retry, or two pending holds for the same
+  // slot could all reach handleConfirm at once, each pass the availability
+  // re-check (no event inserted yet), and each create an event — the same
+  // person ending up double-booked on one court+time. The lock makes confirms
+  // run one at a time so the loser sees the winner's effects (deleted pending /
+  // slot marker) and stops. waitLock blocks up to 20s; if the lock can't be
+  // acquired we ask the visitor to retry rather than risk an unguarded insert.
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (lockErr) {
+    return htmlResponse('Please try again',
+      'We are still processing another request. Please go back and click confirm again in a moment.');
   }
 
-  const pending = JSON.parse(raw);
+  let success = null;
+  try {
+    const raw = props.getProperty('pending_' + token);
+    if (!raw) {
+      // Invalid, expired, OR already confirmed by a sibling request that won the
+      // lock first and deleted the pending hold below — so this is the second
+      // click and we must NOT create another event. Idempotent by design.
+      return htmlResponse('Booking not found',
+        'This confirmation link is invalid, has expired, or was already confirmed.');
+    }
 
-  // Check expiry
-  if (new Date() > new Date(pending.expiresAt)) {
+    const pending = JSON.parse(raw);
+
+    // Check expiry
+    if (new Date() > new Date(pending.expiresAt)) {
+      props.deleteProperty('pending_' + token);
+      return htmlResponse('Link expired', 'This confirmation link has expired. Please book again.', pending.theme || '');
+    }
+
+    // Build start/end
+    const times = readBookingTimes_(pending);
+    const startMinutes = times.startMinutes;
+    const durationMinutes = times.durationMinutes;
+    const endMinutes = startMinutes + durationMinutes;
+    const startDate = new Date(pending.date + 'T' + formatTime(startMinutes) + ':00');
+    const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
+
+    // Final conflict re-check (the slot grid may have shifted under the
+    // user between submit and confirm — if a coach added an event in the
+    // gap or trimmed working hours, the candidate may no longer be valid).
+    const dayName = getDayNameGS_(pending.date);
+    const whForDay = (cfg.workingHours && cfg.workingHours[dayName]) || [];
+    const range = findContainingRange_(whForDay, startMinutes, endMinutes);
+    const courtCalId = cfg.courts[pending.courtId];
+    const busyOfDay = getCourtBusyMinutesOfDay_(courtCalId, pending.date, cfg.timezone);
+    if (!range || !isSlotAvailable_(busyOfDay, range.fromMin, range.toMin, startMinutes, endMinutes)) {
+      props.deleteProperty('pending_' + token);
+      return htmlResponse('Slot no longer available',
+        'Sorry, this slot was just booked by someone else. Please go back and pick another time.', pending.theme || '');
+    }
+
+    // Strongly-consistent duplicate guard. The FreeBusy re-check above is the
+    // source of truth for coach/external events, but Google FreeBusy is
+    // eventually consistent — it can lag seconds behind an event we ourselves
+    // just inserted. So two confirms for the SAME slot (e.g. the user submitted
+    // the booking form twice and confirmed both) could both see the slot free.
+    // This marker is written under this same lock the instant we create an
+    // event (below) and read here, so a later confirm for the same start sees
+    // it immediately, regardless of FreeBusy lag. Cleared in handleCancel.
+    const slotMarkerKey = slotKey_(pending.courtId, pending.date, startMinutes);
+    const slotMarkerVal = props.getProperty(slotMarkerKey);
+    if (slotMarkerVal && !slotMarkerIsStale_(props, cfg, slotMarkerVal)) {
+      props.deleteProperty('pending_' + token);
+      return htmlResponse('Slot no longer available',
+        'Sorry, this slot was just booked. Please go back and pick another time.', pending.theme || '');
+    }
+    // If the marker is stale — its event was deleted directly in Google Calendar
+    // (a supported coach workflow) bypassing the cancel link — we fall through
+    // and re-use the slot; the setProperty(slotMarkerKey, …) below overwrites
+    // the orphaned marker, so a direct deletion no longer blocks re-booking.
+
+    // Create calendar event
+    const timeStr = formatTime(startMinutes);
+    const endTimeStr = formatTime(endMinutes);
+    const lang = pending.language || 'en';
+    const courtLabel = 'Court ' + pending.courtId;
+    const localCourtLabel = tr(lang, 'court') + ' ' + pending.courtId;
+    const eventTitle = pending.name + ' — ' + courtLabel;
+    const priceStr = formatPrice_(calculateBookingPrice_(cfg, pending), cfg);
+    const friendlyDate = formatFriendlyDateLang(startDate, lang);
+
+    // Cancel link is generated up-front so it can live inside the event
+    // description: Google mails that description to the guest as its own native
+    // calendar invitation (sendUpdates:'all' below), and that single invite is
+    // the confirmation email — so it has to carry the cancel link too.
+    const cancelToken = Utilities.getUuid();
+    const cancelUrl = actionWrapperUrl_(cfg, 'cancel=' + cancelToken);
+
+    // Everything the client needs goes into the description, because Google builds
+    // the invitation email from the event's own fields — we cannot style or add to
+    // that email any other way. (The court calendar / coach reads this same text.)
+    const descLines = [
+      tr(lang, 'confirmedIntro'),
+      '',
+      tr(lang, 'date') + ': ' + friendlyDate,
+      tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr,
+      localCourtLabel,
+      tr(lang, 'total') + ': ' + priceStr,
+      '',
+      pending.name + (pending.phone ? ' · ' + pending.phone : '') + ' · ' + pending.email,
+      '',
+      tr(lang, 'needCancel'),
+      cancelUrl,
+    ];
+    let eventDescription = descLines.join('\n');
+    const findUsText = findUsBlock_(cfg, lang);
+    if (findUsText) eventDescription += '\n\n' + findUsText.trim();
+    eventDescription += '\n\n— ' + emailNameOf_(cfg);
+
+    // Create event on the court calendar with guest, using the Advanced Calendar API
+    // so we can suppress Google Meet from the start (conferenceData: null +
+    // conferenceDataVersion: 1). This avoids the problem where CalendarApp
+    // auto-adds a Meet link and mails the guest BEFORE we can strip it.
+    // courtCalId was already resolved above for the conflict check.
+    const eventResource = {
+      summary: eventTitle,
+      description: eventDescription,
+      location: (cfg.contact && cfg.contact.address) || '',
+      start: { dateTime: startDate.toISOString(), timeZone: cfg.timezone },
+      end: { dateTime: endDate.toISOString(), timeZone: cfg.timezone },
+      attendees: [{ email: pending.email, displayName: pending.name }],
+      conferenceData: null,
+      reminders: { useDefault: true },
+    };
+    // sendUpdates:'all' — Google emails the guest its OWN calendar invitation.
+    // That native invite IS the single confirmation email (one letter, not two):
+    // it auto-adds the booking to the client's calendar and auto-updates/removes
+    // it if the event changes. All client-facing details live in the description
+    // above. The guest also stays on the guest list, which fireReminder's
+    // delete-detection relies on.
+    const createdCourtEvent = Calendar.Events.insert(
+      eventResource, courtCalId,
+      { sendUpdates: 'all', conferenceDataVersion: 1 }
+    );
+    // CalendarApp uses "<id>@google.com" form for getEventById, so store that form.
+    const courtEventId = createdCourtEvent.id + '@google.com';
+
+    // Mark the slot taken IMMEDIATELY after the insert (before any other write
+    // that could throw) so a re-click can never produce a twin even within the
+    // FreeBusy propagation window. Value is the cancelToken so handleCancel can
+    // clear exactly this marker.
+    props.setProperty(slotMarkerKey, cancelToken);
+
+    // Store confirmed booking info (for cancellation and reminders)
+    const confirmed = {
+      cancelToken: cancelToken,
+      confirmToken: token,
+      courtEventId: courtEventId,
+      courtId: pending.courtId,
+      name: pending.name,
+      email: pending.email,
+      phone: pending.phone,
+      language: pending.language,
+      theme: pending.theme || '',
+      date: pending.date,
+      startTime: formatTime(startMinutes),
+      durationMinutes: durationMinutes,
+      slotMarkerKey: slotMarkerKey,
+      confirmedAt: new Date().toISOString(),
+    };
+
+    props.setProperty('confirmed_' + cancelToken, JSON.stringify(confirmed));
+    // Also index by confirm token for lookup
+    props.setProperty('cancel_lookup_' + token, cancelToken);
+
+    // Remove pending hold (inside the lock, so a concurrent same-token confirm
+    // that was waiting on the lock now reads a missing pending and stops).
     props.deleteProperty('pending_' + token);
-    return htmlResponse('Link expired', 'This confirmation link has expired. Please book again.', pending.theme || '');
+
+    // Hand the rest (reminders, admin email, response) to the post-lock section
+    // so we hold the lock only for the booking-critical writes.
+    success = {
+      cancelToken: cancelToken,
+      startDate: startDate,
+      lang: lang,
+      friendlyDate: friendlyDate,
+      timeStr: timeStr,
+      email: pending.email,
+      theme: pending.theme || '',
+      pending: pending,
+    };
+  } finally {
+    lock.releaseLock();
   }
 
-  // Build start/end
-  const times = readBookingTimes_(pending);
-  const startMinutes = times.startMinutes;
-  const durationMinutes = times.durationMinutes;
-  const endMinutes = startMinutes + durationMinutes;
-  const startDate = new Date(pending.date + 'T' + formatTime(startMinutes) + ':00');
-  const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
-
-  // Final conflict re-check (the slot grid may have shifted under the
-  // user between submit and confirm — if a coach added an event in the
-  // gap or trimmed working hours, the candidate may no longer be valid).
-  const dayName = getDayNameGS_(pending.date);
-  const whForDay = (cfg.workingHours && cfg.workingHours[dayName]) || [];
-  const range = findContainingRange_(whForDay, startMinutes, endMinutes);
-  const courtCalId = cfg.courts[pending.courtId];
-  const busyOfDay = getCourtBusyMinutesOfDay_(courtCalId, pending.date, cfg.timezone);
-  if (!range || !isSlotAvailable_(busyOfDay, range.fromMin, range.toMin, startMinutes, endMinutes)) {
-    props.deleteProperty('pending_' + token);
-    return htmlResponse('Slot no longer available',
-      'Sorry, this slot was just booked by someone else. Please go back and pick another time.', pending.theme || '');
-  }
-
-  // Create calendar event
-  const timeStr = formatTime(startMinutes);
-  const endTimeStr = formatTime(endMinutes);
-  const lang = pending.language || 'en';
-  const courtLabel = 'Court ' + pending.courtId;
-  const localCourtLabel = tr(lang, 'court') + ' ' + pending.courtId;
-  const eventTitle = pending.name + ' — ' + courtLabel;
-  const priceStr = formatPrice_(calculateBookingPrice_(cfg, pending), cfg);
-  const friendlyDate = formatFriendlyDateLang(startDate, lang);
-
-  // Cancel link is generated up-front so it can live inside the event
-  // description: Google mails that description to the guest as its own native
-  // calendar invitation (sendUpdates:'all' below), and that single invite is
-  // the confirmation email — so it has to carry the cancel link too.
-  const cancelToken = Utilities.getUuid();
-  const cancelUrl = actionWrapperUrl_(cfg, 'cancel=' + cancelToken);
-
-  // Everything the client needs goes into the description, because Google builds
-  // the invitation email from the event's own fields — we cannot style or add to
-  // that email any other way. (The court calendar / coach reads this same text.)
-  const descLines = [
-    tr(lang, 'confirmedIntro'),
-    '',
-    tr(lang, 'date') + ': ' + friendlyDate,
-    tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr,
-    localCourtLabel,
-    tr(lang, 'total') + ': ' + priceStr,
-    '',
-    pending.name + (pending.phone ? ' · ' + pending.phone : '') + ' · ' + pending.email,
-    '',
-    tr(lang, 'needCancel'),
-    cancelUrl,
-  ];
-  let eventDescription = descLines.join('\n');
-  const findUsText = findUsBlock_(cfg, lang);
-  if (findUsText) eventDescription += '\n\n' + findUsText.trim();
-  eventDescription += '\n\n— ' + emailNameOf_(cfg);
-
-  // Create event on the court calendar with guest, using the Advanced Calendar API
-  // so we can suppress Google Meet from the start (conferenceData: null +
-  // conferenceDataVersion: 1). This avoids the problem where CalendarApp
-  // auto-adds a Meet link and mails the guest BEFORE we can strip it.
-  // courtCalId was already resolved above for the conflict check.
-  const eventResource = {
-    summary: eventTitle,
-    description: eventDescription,
-    location: (cfg.contact && cfg.contact.address) || '',
-    start: { dateTime: startDate.toISOString(), timeZone: cfg.timezone },
-    end: { dateTime: endDate.toISOString(), timeZone: cfg.timezone },
-    attendees: [{ email: pending.email, displayName: pending.name }],
-    conferenceData: null,
-    reminders: { useDefault: true },
-  };
-  // sendUpdates:'all' — Google emails the guest its OWN calendar invitation.
-  // That native invite IS the single confirmation email (one letter, not two):
-  // it auto-adds the booking to the client's calendar and auto-updates/removes
-  // it if the event changes. All client-facing details live in the description
-  // above. The guest also stays on the guest list, which fireReminder's
-  // delete-detection relies on.
-  const createdCourtEvent = Calendar.Events.insert(
-    eventResource, courtCalId,
-    { sendUpdates: 'all', conferenceDataVersion: 1 }
-  );
-  // CalendarApp uses "<id>@google.com" form for getEventById, so store that form.
-  const courtEventId = createdCourtEvent.id + '@google.com';
-
-  // Store confirmed booking info (for cancellation and reminders)
-  const confirmed = {
-    cancelToken: cancelToken,
-    confirmToken: token,
-    courtEventId: courtEventId,
-    courtId: pending.courtId,
-    name: pending.name,
-    email: pending.email,
-    phone: pending.phone,
-    language: pending.language,
-    theme: pending.theme || '',
-    date: pending.date,
-    startTime: formatTime(startMinutes),
-    durationMinutes: durationMinutes,
-    confirmedAt: new Date().toISOString(),
-  };
-
-  props.setProperty('confirmed_' + cancelToken, JSON.stringify(confirmed));
-  // Also index by confirm token for lookup
-  props.setProperty('cancel_lookup_' + token, cancelToken);
-
-  // Remove pending hold
-  props.deleteProperty('pending_' + token);
-
+  // ---- Outside the lock: non-critical follow-ups for the winning confirm. ----
   // Schedule reminder triggers
-  scheduleReminders(cancelToken, startDate);
+  scheduleReminders(success.cancelToken, success.startDate);
 
   // No separate confirmation email is sent from here on purpose: Google already
   // emailed the guest its native calendar invitation (sendUpdates:'all' above),
@@ -1237,18 +1305,18 @@ function handleConfirm(token) {
   // two emails — the exact thing we set out to avoid.
 
   // Notify admin(s).
-  notifyAdmins(cfg, pending, 'created');
+  notifyAdmins(cfg, success.pending, 'created');
 
   return htmlResponse(
-    tr(lang, 'htmlConfirmedTitle'),
-    tr(lang, 'htmlConfirmedBody', {
-      date: htmlEscape(friendlyDate),
-      time: htmlEscape(timeStr),
-      email: htmlEscape(pending.email),
+    tr(success.lang, 'htmlConfirmedTitle'),
+    tr(success.lang, 'htmlConfirmedBody', {
+      date: htmlEscape(success.friendlyDate),
+      time: htmlEscape(success.timeStr),
+      email: htmlEscape(success.email),
       url: htmlEscape(cfg.siteUrl),
       site: htmlEscape(heroNameOf_(cfg)),
     }),
-    pending.theme || ''
+    success.theme
   );
 }
 
@@ -1416,6 +1484,12 @@ function handleCancel(cancelToken) {
   if (booking.confirmToken) {
     props.deleteProperty('cancel_lookup_' + booking.confirmToken);
   }
+  // Release the per-slot duplicate-guard marker so this exact court+date+start
+  // can be booked again. Prefer the key stored on the booking; fall back to
+  // recomputing it for bookings confirmed before that field existed.
+  const slotMarkerKey = booking.slotMarkerKey
+    || slotKey_(booking.courtId, booking.date, cancelTimes.startMinutes);
+  props.deleteProperty(slotMarkerKey);
 
   return htmlResponse(
     tr(lang, 'htmlCancelledTitle'),
@@ -1516,11 +1590,22 @@ function actionPage_(opts) {
     + '<h1>' + htmlEscape(opts.title) + '</h1>'
     + '<p>' + htmlEscape(opts.intro) + '</p>'
     + detailsHtml
-    + '<form method="post" action="' + htmlEscape(execUrl) + '" target="' + navTarget + '">'
+    + '<form id="af" method="post" action="' + htmlEscape(execUrl) + '" target="' + navTarget + '">'
     + '<input type="hidden" name="action" value="' + htmlEscape(opts.actionValue) + '">'
     + '<input type="hidden" name="' + htmlEscape(opts.tokenName) + '" value="' + htmlEscape(opts.tokenValue) + '">'
     + '<button type="submit">' + htmlEscape(opts.buttonLabel) + '</button>'
     + '</form>'
+    // Defense-in-depth against double-booking: disable the button after the
+    // first submit so a double-click / impatient re-tap can't fire a second
+    // POST. The setTimeout(…,0) lets the in-flight submission start before the
+    // button is disabled (a button disabled synchronously inside the submit
+    // handler can cancel the submission in some browsers). The server-side
+    // LockService + per-slot marker in handleConfirm are the real guard; this
+    // just stops the common case at the source.
+    + '<script>(function(){var f=document.getElementById("af");if(!f)return;'
+    + 'f.addEventListener("submit",function(){var b=f.querySelector("button");'
+    + 'if(f.getAttribute("data-sent")){return;}f.setAttribute("data-sent","1");'
+    + 'setTimeout(function(){b.disabled=true;b.textContent="…";},0);});})();</script>'
     + '</body></html>';
 
   // addMetaTag is required for mobile scaling: HtmlService serves pages inside
@@ -1951,6 +2036,49 @@ function getDayNameGS_(dateStr) {
   // the day-of-week matches the user-visible date.
   const d = new Date(dateStr + 'T00:00:00');
   return DAY_NAMES_GS[d.getDay()];
+}
+
+// Script Properties key for the per-slot "this exact court+date+start is taken"
+// marker written/read under the script lock in handleConfirm and cleared in
+// handleCancel. Keyed by start time only (not duration): the 30-min grid means
+// any two bookings that share a start collide, and the FreeBusy re-check still
+// catches genuine partial-overlap conflicts. Its value is the booking's
+// cancelToken so handleCancel can clear exactly this marker and so a colliding
+// confirm can reconcile against the underlying event (see slotMarkerIsStale_).
+function slotKey_(courtId, dateStr, startMinutes) {
+  return 'slot_' + courtId + '_' + dateStr + '_' + formatTime(startMinutes);
+}
+
+// A slot marker is "stale" when the booking it points to no longer has a live
+// court event — e.g. a coach deleted the event directly in Google Calendar (a
+// supported workflow; see fireReminder's delete-detection) instead of using the
+// cancel link, which would otherwise leave the marker orphaned and block
+// re-booking that exact start. We verify with Calendar.Events.get, which is
+// strongly consistent (unlike FreeBusy), so a slot we ourselves JUST booked is
+// never misjudged as stale. On any ambiguous/transient error we return false
+// (treat the slot as taken) so we never risk re-opening the double-booking hole;
+// only a clear "event is gone" signal frees the slot.
+function slotMarkerIsStale_(props, cfg, markerCancelToken) {
+  const raw = props.getProperty('confirmed_' + markerCancelToken);
+  if (!raw) return true;  // booking record already gone → marker is orphaned
+  let booking;
+  try { booking = JSON.parse(raw); } catch (e) { return true; }
+  const calId = cfg.courts && cfg.courts[booking.courtId];
+  if (!calId || !booking.courtEventId) return false;  // can't verify → keep marker
+  try {
+    // courtEventId is stored as "<id>@google.com"; Calendar.Events.get wants the bare id.
+    const bareId = String(booking.courtEventId).replace(/@google\.com$/, '');
+    const ev = Calendar.Events.get(calId, bareId);
+    return !ev || ev.status === 'cancelled';
+  } catch (e) {
+    const msg = String((e && e.message) || e).toLowerCase();
+    // A deleted event reliably yields a not-found/gone error → marker is stale.
+    if (msg.indexOf('not found') !== -1 || msg.indexOf('404') !== -1
+        || msg.indexOf('410') !== -1 || msg.indexOf('deleted') !== -1) {
+      return true;
+    }
+    return false;  // transient/unknown → keep the marker, never risk a duplicate
+  }
 }
 
 // Send court-booking notification to admin(s). kind is 'created' or 'cancelled'.
