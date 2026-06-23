@@ -841,6 +841,7 @@ function buildAvailability_(params) {
 
 function handleBookingRequest(body) {
   const cfg = getSettings();
+  const props = PropertiesService.getScriptProperties();
   const GENERIC = 'Invalid booking request.';
 
   // Validate required fields (without echoing field names back to the client)
@@ -911,6 +912,38 @@ function handleBookingRequest(body) {
   if (!isSlotAvailable_(busyOfDay, range.fromMin, range.toMin, startMinutes, endMinutes)) {
     return jsonResponse({ error: 'This slot was just booked by someone else. Please pick another.' }, 409);
   }
+  // Lag-proof "already booked" check. FreeBusy above can lag behind an event we
+  // just created, so also consult the strongly-consistent confirmed-slot marker
+  // (cleared on cancel; self-healed if the event was deleted directly in
+  // Calendar). This keeps a confirm email from going out for a taken slot.
+  const reqSlotKey = slotKey_(body.courtId, body.date, startMinutes);
+  const reqSlotVal = props.getProperty(reqSlotKey);
+  if (reqSlotVal && !slotMarkerIsStale_(props, cfg, reqSlotVal)) {
+    return jsonResponse({ error: 'This slot was just booked by someone else. Please pick another.' }, 409);
+  }
+
+  // Don't send a SECOND identical confirm email if this same person already has
+  // a live pending hold for this exact slot (e.g. they submitted the form twice
+  // because the first attempt seemed not to go through). A hold that has expired
+  // or was already confirmed/cleared counts as absent, so this never blocks a
+  // genuine re-try later. Different people can still each hold the slot — the
+  // lock + marker in handleConfirm guarantee only one of them wins.
+  const emailNorm = String(body.email).trim();
+  const holdKey = pendingHoldKey_(emailNorm, body.courtId, body.date, startMinutes);
+  const heldToken = props.getProperty(holdKey);
+  if (heldToken) {
+    const heldRaw = props.getProperty('pending_' + heldToken);
+    if (heldRaw) {
+      try {
+        const heldPending = JSON.parse(heldRaw);
+        if (new Date() <= new Date(heldPending.expiresAt)) {
+          // They already have the email; report success so the UI repeats
+          // "check your email" without sending another message.
+          return jsonResponse({ status: 'pending', message: 'Check your email to confirm the booking.' });
+        }
+      } catch (e) { /* unparseable hold → treat as absent, fall through */ }
+    }
+  }
 
   // Rate limit BEFORE any side effect (no email sent on reject)
   const rl = checkRateLimit(String(body.email).trim());
@@ -951,8 +984,10 @@ function handleBookingRequest(body) {
     expiresAt: new Date(Date.now() + cfg.pendingTtlMinutes * 60 * 1000).toISOString(),
   };
 
-  const props = PropertiesService.getScriptProperties();
   props.setProperty('pending_' + token, JSON.stringify(pending));
+  // Index this hold by (email, slot) so a duplicate submission for the same
+  // slot is recognized above and doesn't trigger a second confirm email.
+  props.setProperty(holdKey, token);
 
   // Send confirmation email (in the client's chosen language)
   const lang = pending.language;
@@ -1277,6 +1312,8 @@ function handleConfirm(token) {
     // Remove pending hold (inside the lock, so a concurrent same-token confirm
     // that was waiting on the lock now reads a missing pending and stops).
     props.deleteProperty('pending_' + token);
+    // Drop the (email, slot) dedup index for this hold too.
+    props.deleteProperty(pendingHoldKey_(pending.email, pending.courtId, pending.date, startMinutes));
 
     // Hand the rest (reminders, admin email, response) to the post-lock section
     // so we hold the lock only for the booking-critical writes.
@@ -2047,6 +2084,15 @@ function getDayNameGS_(dateStr) {
 // confirm can reconcile against the underlying event (see slotMarkerIsStale_).
 function slotKey_(courtId, dateStr, startMinutes) {
   return 'slot_' + courtId + '_' + dateStr + '_' + formatTime(startMinutes);
+}
+
+// Script Properties key indexing a still-pending hold by (email, court, date,
+// start). handleBookingRequest writes it alongside the pending hold and reads it
+// to suppress a duplicate confirm email when the same person re-submits the same
+// slot; handleConfirm clears it. Email is lower-cased so case variants of the
+// same address collapse to one key.
+function pendingHoldKey_(email, courtId, dateStr, startMinutes) {
+  return 'held_' + String(email).toLowerCase() + '_' + courtId + '_' + dateStr + '_' + formatTime(startMinutes);
 }
 
 // A slot marker is "stale" when the booking it points to no longer has a live
