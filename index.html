@@ -125,6 +125,12 @@
     <p class="tagline">Rezervišite teren ili trening</p>
   </header>
 
+  <!-- Site notice / scarcity banner mount point.
+       Populated by app.js from the admin-configured `notice` setting, and
+       only while the current time falls inside its show window. Empty (and
+       hidden via #site-notice:empty) the rest of the time. -->
+  <div id="site-notice"></div>
+
   <!-- Booking app mount point -->
   <main class="main-container">
     <!-- data-nosnippet tells Google not to use any text from the dynamically

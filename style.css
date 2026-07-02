@@ -231,6 +231,62 @@ body {
   display: none;
 }
 
+/* ---- Site notice / scarcity banner ---- */
+/* Mount wrapper keeps side gutters on mobile and hides itself when app.js
+   leaves it empty (outside the window, disabled, or dismissed). */
+#site-notice { padding: 0 1rem; }
+#site-notice:empty { display: none; }
+
+.site-notice {
+  max-width: var(--max-w);
+  margin: 0 auto 1.5rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.85rem 0.95rem;
+  background: var(--accent-glow);
+  border: 1px solid var(--accent);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  animation: notice-in 0.25s ease both;
+}
+
+@keyframes notice-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.site-notice-icon {
+  flex: 0 0 auto;
+  display: flex;
+  color: var(--accent);
+  margin-top: 1px;
+}
+
+.site-notice-text {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  /* Honor line breaks the admin types into the notice text. */
+  white-space: pre-line;
+}
+
+.site-notice-close {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.35rem;
+  line-height: 1;
+  padding: 0 0.15rem;
+  margin: -0.15rem -0.15rem 0 0;
+  cursor: pointer;
+  transition: color var(--transition);
+}
+.site-notice-close:hover { color: var(--text); }
+
 /* ---- Main container ---- */
 .main-container {
   max-width: var(--max-w);

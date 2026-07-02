@@ -57,6 +57,7 @@
       notes: 'When do you want to play? Anything else we should know?',
       notesPlaceholder: 'E.g. weekday evenings, Saturday mornings, preferred coach, injuries…',
       openInMap: 'Open in Google Maps',
+      dismiss: 'Dismiss',
     },
     sr: {
       bookCourt: 'Rezervišite teren',
@@ -107,6 +108,7 @@
       notes: 'Kada želite da igrate? Još nešto što treba da znamo?',
       notesPlaceholder: 'Npr. radnim danima uveče, subota ujutru, željeni trener, povrede…',
       openInMap: 'Otvori u Google Maps',
+      dismiss: 'Zatvori',
     },
     ru: {
       bookCourt: 'Забронировать корт',
@@ -157,6 +159,7 @@
       notes: 'Когда хотите играть? Что-нибудь ещё, что нам нужно знать?',
       notesPlaceholder: 'Напр. будни вечером, суббота утром, предпочитаемый тренер, травмы…',
       openInMap: 'Открыть в Google Maps',
+      dismiss: 'Скрыть',
     }
   };
 
@@ -324,6 +327,7 @@
 
     applySiteNames();
     renderFooter();
+    renderNotice();
 
     if (document.querySelector('.booking-modal-overlay')) return;
     if (currentMode !== 'court') return;
@@ -448,6 +452,7 @@
             saveCachedSettings(s);
             applySiteNames();
             renderFooter();
+            renderNotice();
             return true;
           })
           .catch(e => { console.error('Settings fetch failed:', e); return false; });
@@ -802,6 +807,7 @@
     }
 
     renderFooter();
+    renderNotice();
   }
 
   // Footer is its own element outside #booking-app, so we can refresh it
@@ -834,6 +840,108 @@
         </div>
       </div>
     `;
+  }
+
+  // ---- Site notice / scarcity banner ----
+  // A single admin-configurable banner (e.g. "tournament coming — fewer
+  // courts available, book early") shown on the public site only while the
+  // current time sits inside a [from, to] window. The window is evaluated in
+  // the club's timezone (config.timezone) so it flips at the intended
+  // wall-clock time regardless of the visitor's own timezone. Text is
+  // per-language with graceful fallback. Dismissible; the dismissal is
+  // remembered per run so editing the dates *or the text* re-shows it to
+  // everyone who dismissed the previous version.
+  const NOTICE_DISMISS_KEY = 'tk_notice_dismissed';
+
+  // Small stable string hash (djb2). Folded into the dismissal key so that
+  // re-wording an active notice mints a new identity and re-surfaces it.
+  function noticeHash(str) {
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  }
+
+  // Current wall-clock time in `tz` as "YYYY-MM-DDTHH:MM". That format sorts
+  // lexicographically in chronological order, so it compares directly against
+  // the admin's naive datetime-local strings (which are club-local too).
+  // Falls back to the visitor's local clock if the timezone is missing or
+  // Intl rejects it — good enough, since the audience is overwhelmingly local.
+  function nowInTimezone(tz) {
+    try {
+      if (!tz) throw new Error('no tz');
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      }).formatToParts(new Date());
+      const get = type => (parts.find(p => p.type === type) || {}).value || '';
+      let hh = get('hour');
+      if (hh === '24') hh = '00'; // some engines emit 24 for midnight
+      return `${get('year')}-${get('month')}-${get('day')}T${hh}:${get('minute')}`;
+    } catch (e) {
+      const d = new Date();
+      const p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+  }
+
+  // Best available text: current language → default language → any non-empty.
+  function noticeText(notice) {
+    const text = (notice && notice.text) || {};
+    const order = [currentLang, config.defaultLanguage, 'sr', 'en', 'ru'];
+    for (const lang of order) {
+      const v = lang && text[lang];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return '';
+  }
+
+  function noticeIsActive(notice) {
+    if (!notice || !notice.enabled) return false;
+    if (!noticeText(notice)) return false;
+    const now = nowInTimezone(config.timezone);
+    if (notice.from && now < String(notice.from)) return false;
+    if (notice.to && now > String(notice.to)) return false;
+    return true;
+  }
+
+  function megaphoneSVG() {
+    return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 11v2a1 1 0 0 0 1 1h2l3.5 4.5a1 1 0 0 0 1.8-.6V6.1a1 1 0 0 0-1.8-.6L6 10H4a1 1 0 0 0-1 1z"/>
+      <path d="M15 8a4 4 0 0 1 0 8"/>
+    </svg>`;
+  }
+
+  // Renders (or clears) the banner into #site-notice — a standalone element
+  // outside #booking-app, so booking re-renders never disturb it. Safe to
+  // call repeatedly; called on first render, on language switch, and when a
+  // background settings refresh changes the notice.
+  function renderNotice() {
+    const mount = document.getElementById('site-notice');
+    if (!mount) return;
+    const notice = config && config.notice;
+    if (!noticeIsActive(notice)) { mount.innerHTML = ''; return; }
+
+    // Dismissal identity — sticks only for this exact run + wording.
+    const windowKey = `${notice.from || ''}|${notice.to || ''}|${noticeHash(JSON.stringify(notice.text || {}))}`;
+    let dismissed = null;
+    try { dismissed = localStorage.getItem(NOTICE_DISMISS_KEY); } catch (e) {}
+    if (dismissed === windowKey) { mount.innerHTML = ''; return; }
+
+    mount.innerHTML = `
+      <div class="site-notice" role="status">
+        <span class="site-notice-icon">${megaphoneSVG()}</span>
+        <p class="site-notice-text">${escapeHtml(noticeText(notice))}</p>
+        <button type="button" class="site-notice-close" aria-label="${escapeHtml(t('dismiss'))}">&times;</button>
+      </div>`;
+
+    const closeBtn = mount.querySelector('.site-notice-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        try { localStorage.setItem(NOTICE_DISMISS_KEY, windowKey); } catch (e) {}
+        mount.innerHTML = '';
+      });
+    }
   }
 
   // ---- Render loading ----

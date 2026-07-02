@@ -98,6 +98,9 @@ function publicSettings(full) {
     contact: full.contact,
     languages: full.languages,
     defaultLanguage: full.defaultLanguage,
+    // Public-facing site banner (tournament / scarcity notice). Safe to
+    // expose in full — it's meant to be read by every visitor.
+    notice: full.notice || null,
     calendars: {
       courts: courtKeys,
     },
@@ -158,6 +161,16 @@ function setupInitialSettings() {
     },
     languages: ['en', 'sr', 'ru'],
     defaultLanguage: 'sr',
+    // Optional site-wide banner (e.g. tournament announcement + court
+    // scarcity). Shown on the public site only while now (in `timezone`)
+    // falls inside [from, to]. Per-language text with fallback. Disabled
+    // and blank by default so nothing shows until the admin fills it in.
+    notice: {
+      enabled: false,
+      from: '',   // "YYYY-MM-DDTHH:MM" in the club timezone; blank = no lower bound
+      to: '',     // "YYYY-MM-DDTHH:MM" in the club timezone; blank = no upper bound
+      text: { sr: '', en: '', ru: '' },
+    },
     courts: {
       '1': '',
       '2': '',
@@ -257,6 +270,22 @@ function validateSettings(s) {
   }
   if (!s.courts['1'] || !s.courts['2'] || !s.courts['3'] || !s.courts['4'] || !s.courts['5']) {
     throw new Error('All five court calendar IDs are required.');
+  }
+  // notice is optional (older settings blobs predate it). When present it
+  // must be an object with an object `text` map, and — if enabled with both
+  // bounds set — a start no later than the end.
+  if (s.notice !== undefined && s.notice !== null) {
+    if (typeof s.notice !== 'object' || Array.isArray(s.notice)) {
+      throw new Error('notice must be an object.');
+    }
+    if (s.notice.text !== undefined && s.notice.text !== null &&
+        (typeof s.notice.text !== 'object' || Array.isArray(s.notice.text))) {
+      throw new Error('notice.text must be an object keyed by language.');
+    }
+    if (s.notice.enabled && s.notice.from && s.notice.to &&
+        String(s.notice.from) > String(s.notice.to)) {
+      throw new Error('Notice "show from" must be no later than "show until".');
+    }
   }
 }
 
