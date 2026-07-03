@@ -1,11 +1,20 @@
 # Cloudflare Pages response headers.
-# Code + data (HTML/JS/CSS/JSON) must always revalidate so a `git push`
-# reaches every visitor immediately — filenames aren't content-hashed, and
-# Cloudflare Pages' default (max-age=14400) otherwise pins stale JS for 4h.
-# The browser still caches via ETag and gets a cheap 304 when unchanged.
-/*
+# Pages defaults JS/CSS to Cache-Control max-age=14400 (4h), which pins stale
+# code after a deploy. Filenames aren't content-hashed, so make code + data
+# always revalidate (cheap 304 via ETag) — deploys then reach everyone at once.
+# NB: a bare `/*` catch-all does NOT override Pages' default Cache-Control;
+# extension-specific rules do. So we list them explicitly.
+/
+  Cache-Control: public, max-age=0, must-revalidate
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
+/*.js
+  Cache-Control: public, max-age=0, must-revalidate
+/*.css
+  Cache-Control: public, max-age=0, must-revalidate
+/*.json
   Cache-Control: public, max-age=0, must-revalidate
 
-# Images never change — let them cache for a week.
+# Images never change — cache a week.
 /*.png
   Cache-Control: public, max-age=604800
