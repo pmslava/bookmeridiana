@@ -13,27 +13,46 @@
   appears on the TOP-level script.google.com page, so framing hides it.
   The exec page is served with XFrameOptionsMode.ALLOWALL + ?embed=1 (see
   actionPage_ / doGet in Code.gs).
+
+  Speed: the Apps Script response is the slow part (~1.5s+, more on a cold
+  start). So we start loading its iframe IMMEDIATELY — no config.json fetch on
+  the critical path — and keep a spinner up until the framed page is ready,
+  instead of showing a blank gap.
 -->
 <style>
   :root { color-scheme: light dark; }
   html, body { margin: 0; padding: 0; height: 100%; background: #0f1115; }
   @media (prefers-color-scheme: light) { html, body { background: #f4f4f5; } }
-  #frame { position: fixed; inset: 0; width: 100%; height: 100vh; height: 100dvh; border: 0; }
+  #frame { position: fixed; inset: 0; width: 100%; height: 100vh; height: 100dvh; border: 0; z-index: 1; }
   #msg {
+    position: fixed; inset: 0; z-index: 2;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
+    background: #0f1115;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: #9aa0a6; text-align: center; padding: 2.5rem 1.5rem; font-size: 1.05rem;
   }
+  @media (prefers-color-scheme: light) { #msg { background: #f4f4f5; } }
+  .spin {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 3px solid rgba(154, 160, 166, 0.3); border-top-color: #9aa0a6;
+    animation: sp 0.8s linear infinite;
+  }
+  @keyframes sp { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
-<div id="msg">Loading&hellip;</div>
+<div id="msg"><div class="spin"></div><div>Loading&hellip;</div></div>
 <noscript><div style="font-family:system-ui,sans-serif;color:#9aa0a6;text-align:center;padding:2.5rem 1.5rem">Please enable JavaScript to continue.</div></noscript>
 <script>
 (function () {
   var ACTIONS = ['confirm', 'cancel', 'confirmTraining'];
   var TOKEN_RE = /^[0-9a-fA-F-]{8,64}$/;
+  // Same value as config.json's appsScriptUrl. Hardcoded here so this page can
+  // start loading the (slow) Apps Script iframe with no config.json round-trip
+  // first. Keep in sync with config.json if the deployment URL ever changes.
+  var EXEC = 'https://script.google.com/macros/s/AKfycbw4-i55-oaE0gjuHbFqoT93imYT03nogRusX56hDflnXMkYuYXJacaUvVNjA6fx8tEncA/exec';
   var msg = document.getElementById('msg');
-  function fail(text) { if (msg) msg.textContent = text; }
+  function fail(text) { if (msg) { msg.innerHTML = ''; msg.textContent = text; } }
 
   var params = new URLSearchParams(location.search);
   var action = null, token = null;
@@ -43,21 +62,19 @@
   }
   if (!action || !TOKEN_RE.test(token)) { fail('This link is not valid.'); return; }
 
-  fetch('config.json', { cache: 'no-store' })
-    .then(function (r) { return r.json(); })
-    .then(function (cfg) {
-      var exec = cfg && cfg.appsScriptUrl;
-      if (!exec) { fail('Configuration error. Please try again later.'); return; }
-      var sep = exec.indexOf('?') === -1 ? '?' : '&';
-      var src = exec + sep + action + '=' + encodeURIComponent(token) + '&embed=1';
-      var f = document.createElement('iframe');
-      f.id = 'frame';
-      f.title = 'Tennis Kosmos';
-      f.src = src;
-      if (msg) msg.remove();
-      document.body.appendChild(f);
-    })
-    .catch(function () { fail('Could not load. Please check your connection and retry.'); });
+  var sep = EXEC.indexOf('?') === -1 ? '?' : '&';
+  var src = EXEC + sep + action + '=' + encodeURIComponent(token) + '&embed=1';
+  var f = document.createElement('iframe');
+  f.id = 'frame';
+  f.title = 'Tennis Kosmos';
+  f.src = src;
+  // Reveal the framed page (drop the spinner) once it's actually loaded — the
+  // cross-origin 'load' event still fires. Safety timeout in case it never does.
+  var done = false;
+  function reveal() { if (done) return; done = true; if (msg) msg.remove(); }
+  f.addEventListener('load', reveal);
+  setTimeout(reveal, 25000);
+  document.body.appendChild(f);
 })();
 </script>
 </body>
