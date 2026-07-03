@@ -312,6 +312,8 @@
   // with. Skips: an open booking modal (preserves the flow), the training
   // form (preserves any user input). Always safe to call.
   function refreshAfterSettingsChange() {
+    // Settings (incl. timezone) may have changed — drop memoized busy data.
+    clearBusyCache();
     // selectedDate may now sit outside a smaller daysAhead window.
     if (selectedDate) {
       const today = clubTodayDate();
@@ -468,10 +470,12 @@
         throw new Error('settings unavailable');
       }
       availability = data;
+      clearBusyCache();
     } catch (e) {
       console.error('Availability fetch failed:', e);
       await minLoadingDelay;
       availability = null;
+      clearBusyCache();
       renderAvailabilityError();
       return;
     } finally {
@@ -543,23 +547,31 @@
   // force Date to report UTC — we never trust the visitor's local clock for the
   // club's calendar. `new Date()` still carries the true instant; only its
   // local accessors are spoofed, and we bypass those via Intl + explicit tz.
+  //
+  // The Intl.DateTimeFormat is cached (per timezone): constructing one is
+  // expensive and this runs thousands of times per calendar render.
+  let _tzFmt = null, _tzFmtTz = null;
   function tzWallParts(date) {
     const tz = config && config.timezone;
-    try {
-      if (!tz) throw new Error('no tz');
-      const p = {};
-      for (const part of new Intl.DateTimeFormat('en-CA', {
-        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', hour12: false,
-      }).formatToParts(date)) p[part.type] = part.value;
-      let hh = parseInt(p.hour, 10); if (hh === 24) hh = 0;
-      return { key: `${p.year}-${p.month}-${p.day}`, min: hh * 60 + parseInt(p.minute, 10) };
-    } catch (e) {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return { key: `${y}-${m}-${d}`, min: date.getHours() * 60 + date.getMinutes() };
+    if (tz) {
+      try {
+        if (_tzFmtTz !== tz) {
+          _tzFmt = new Intl.DateTimeFormat('en-CA', {
+            timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', hour12: false,
+          });
+          _tzFmtTz = tz;
+        }
+        const p = {};
+        for (const part of _tzFmt.formatToParts(date)) p[part.type] = part.value;
+        let hh = parseInt(p.hour, 10); if (hh === 24) hh = 0;
+        return { key: `${p.year}-${p.month}-${p.day}`, min: hh * 60 + parseInt(p.minute, 10) };
+      } catch (e) { /* fall through to visitor-local */ }
     }
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return { key: `${y}-${m}-${d}`, min: date.getHours() * 60 + date.getMinutes() };
   }
   // "Today" and "now" in the club's timezone.
   function clubTodayKey() { return tzWallParts(new Date()).key; }
@@ -573,24 +585,35 @@
   // endMin} from midnight IN THE CLUB TIMEZONE. Intervals overlapping the day
   // boundary are clamped. Using the club timezone (not the visitor's) is what
   // makes a booking at 10:00 Belgrade read as busy at 10:00 for every visitor.
+  //
+  // Memoized per (court, day): this is recomputed for every candidate slot, so
+  // without the cache a single render runs the Intl conversions thousands of
+  // times. Cleared via clearBusyCache() whenever availability or settings change.
+  let _busyCache = new Map();
+  function clearBusyCache() { _busyCache.clear(); }
   function getCourtBusyOfDay(courtNum, date) {
-    const busyList = availability.courts?.[courtNum]?.busy;
-    if (!busyList || busyList.length === 0) return [];
     const dayKey = dateKey(date);
+    const cacheKey = courtNum + '|' + dayKey;
+    const hit = _busyCache.get(cacheKey);
+    if (hit) return hit;
     const out = [];
-    for (const b of busyList) {
-      const s = tzWallParts(new Date(b.start));
-      const e = tzWallParts(new Date(b.end));
-      let startMin;
-      if (s.key < dayKey) startMin = 0;            // started on an earlier day
-      else if (s.key === dayKey) startMin = s.min;
-      else continue;                                // starts after this day
-      let endMin;
-      if (e.key > dayKey) endMin = 1440;           // ends on a later day
-      else if (e.key === dayKey) endMin = e.min;
-      else continue;                                // ended before this day
-      if (endMin > startMin) out.push({ startMin, endMin });
+    const busyList = availability.courts?.[courtNum]?.busy;
+    if (busyList && busyList.length) {
+      for (const b of busyList) {
+        const s = tzWallParts(new Date(b.start));
+        const e = tzWallParts(new Date(b.end));
+        let startMin;
+        if (s.key < dayKey) startMin = 0;            // started on an earlier day
+        else if (s.key === dayKey) startMin = s.min;
+        else continue;                                // starts after this day
+        let endMin;
+        if (e.key > dayKey) endMin = 1440;           // ends on a later day
+        else if (e.key === dayKey) endMin = e.min;
+        else continue;                                // ended before this day
+        if (endMin > startMin) out.push({ startMin, endMin });
+      }
     }
+    _busyCache.set(cacheKey, out);
     return out;
   }
 
