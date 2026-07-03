@@ -314,8 +314,7 @@
   function refreshAfterSettingsChange() {
     // selectedDate may now sit outside a smaller daysAhead window.
     if (selectedDate) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const today = clubTodayDate();
       const daysAhead = config.daysAhead || 10;
       const lastDate = new Date(today);
       lastDate.setDate(lastDate.getDate() + daysAhead - 1);
@@ -537,24 +536,59 @@
     return `${y}-${m}-${d}`;
   }
 
-  // Pull busy intervals for one court on `date`, expressed as
-  // {startMin, endMin} from local midnight. Events overlapping the day
-  // boundary are clamped.
+  // Wall-clock parts of an instant in the club's timezone (config.timezone),
+  // independent of the visitor's browser. Returns { key: 'YYYY-MM-DD',
+  // min: minutes-from-midnight }. This keeps the calendar correct for
+  // out-of-timezone visitors and for privacy browsers (Tor/LibreWolf) that
+  // force Date to report UTC — we never trust the visitor's local clock for the
+  // club's calendar. `new Date()` still carries the true instant; only its
+  // local accessors are spoofed, and we bypass those via Intl + explicit tz.
+  function tzWallParts(date) {
+    const tz = config && config.timezone;
+    try {
+      if (!tz) throw new Error('no tz');
+      const p = {};
+      for (const part of new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      }).formatToParts(date)) p[part.type] = part.value;
+      let hh = parseInt(p.hour, 10); if (hh === 24) hh = 0;
+      return { key: `${p.year}-${p.month}-${p.day}`, min: hh * 60 + parseInt(p.minute, 10) };
+    } catch (e) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return { key: `${y}-${m}-${d}`, min: date.getHours() * 60 + date.getMinutes() };
+    }
+  }
+  // "Today" and "now" in the club's timezone.
+  function clubTodayKey() { return tzWallParts(new Date()).key; }
+  function clubNowMinutes() { return tzWallParts(new Date()).min; }
+  function clubTodayDate() {
+    const p = clubTodayKey().split('-');
+    return new Date(+p[0], +p[1] - 1, +p[2]);
+  }
+
+  // Pull busy intervals for one court on `date`, expressed as {startMin,
+  // endMin} from midnight IN THE CLUB TIMEZONE. Intervals overlapping the day
+  // boundary are clamped. Using the club timezone (not the visitor's) is what
+  // makes a booking at 10:00 Belgrade read as busy at 10:00 for every visitor.
   function getCourtBusyOfDay(courtNum, date) {
     const busyList = availability.courts?.[courtNum]?.busy;
     if (!busyList || busyList.length === 0) return [];
-    const dayStart = new Date(date);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEndMin = 1440;
+    const dayKey = dateKey(date);
     const out = [];
     for (const b of busyList) {
-      const bs = new Date(b.start);
-      const be = new Date(b.end);
-      let startMin = Math.round((bs - dayStart) / 60000);
-      let endMin = Math.round((be - dayStart) / 60000);
-      if (endMin <= 0 || startMin >= dayEndMin) continue;
-      if (startMin < 0) startMin = 0;
-      if (endMin > dayEndMin) endMin = dayEndMin;
+      const s = tzWallParts(new Date(b.start));
+      const e = tzWallParts(new Date(b.end));
+      let startMin;
+      if (s.key < dayKey) startMin = 0;            // started on an earlier day
+      else if (s.key === dayKey) startMin = s.min;
+      else continue;                                // starts after this day
+      let endMin;
+      if (e.key > dayKey) endMin = 1440;           // ends on a later day
+      else if (e.key === dayKey) endMin = e.min;
+      else continue;                                // ended before this day
       if (endMin > startMin) out.push({ startMin, endMin });
     }
     return out;
@@ -660,9 +694,8 @@
     const wh = getWorkingHoursForDate(date);
     if (wh.length === 0) return [];
 
-    const now = new Date();
-    const isToday = dateKey(date) === dateKey(now);
-    const nowMin = isToday ? now.getHours() * 60 + now.getMinutes() : -1;
+    const isToday = dateKey(date) === clubTodayKey();
+    const nowMin = isToday ? clubNowMinutes() : -1;
     const slots = [];
 
     for (const range of wh) {
@@ -848,18 +881,12 @@
   // current time sits inside a [from, to] window. The window is evaluated in
   // the club's timezone (config.timezone) so it flips at the intended
   // wall-clock time regardless of the visitor's own timezone. Text is
-  // per-language with graceful fallback. Dismissible; the dismissal is
-  // remembered per run so editing the dates *or the text* re-shows it to
-  // everyone who dismissed the previous version.
-  const NOTICE_DISMISS_KEY = 'tk_notice_dismissed';
-
-  // Small stable string hash (djb2). Folded into the dismissal key so that
-  // re-wording an active notice mints a new identity and re-surfaces it.
-  function noticeHash(str) {
-    let h = 5381;
-    for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
-    return (h >>> 0).toString(36);
-  }
+  // per-language with graceful fallback. Dismissible per session: closing it
+  // hides it for the current view, but it reappears on the next refresh while
+  // still inside its date window. The dismissal is in-memory only (not
+  // persisted) — keyed by window + text so a background settings change
+  // re-shows it too, and it naturally resets on page reload.
+  let dismissedNoticeKey = null;
 
   // Current wall-clock time in `tz` as "YYYY-MM-DDTHH:MM". That format sorts
   // lexicographically in chronological order, so it compares directly against
@@ -922,11 +949,10 @@
     const notice = config && config.notice;
     if (!noticeIsActive(notice)) { mount.innerHTML = ''; return; }
 
-    // Dismissal identity — sticks only for this exact run + wording.
-    const windowKey = `${notice.from || ''}|${notice.to || ''}|${noticeHash(JSON.stringify(notice.text || {}))}`;
-    let dismissed = null;
-    try { dismissed = localStorage.getItem(NOTICE_DISMISS_KEY); } catch (e) {}
-    if (dismissed === windowKey) { mount.innerHTML = ''; return; }
+    // Identity of this notice (window + text). If it was dismissed during this
+    // page view, keep it hidden until the next reload.
+    const noticeKey = `${notice.from || ''}|${notice.to || ''}|${JSON.stringify(notice.text || {})}`;
+    if (dismissedNoticeKey === noticeKey) { mount.innerHTML = ''; return; }
 
     mount.innerHTML = `
       <div class="site-notice" role="status">
@@ -938,7 +964,7 @@
     const closeBtn = mount.querySelector('.site-notice-close');
     if (closeBtn) {
       closeBtn.addEventListener('click', () => {
-        try { localStorage.setItem(NOTICE_DISMISS_KEY, windowKey); } catch (e) {}
+        dismissedNoticeKey = noticeKey;
         mount.innerHTML = '';
       });
     }
@@ -963,8 +989,7 @@
     const pane = document.getElementById('calendar-pane');
     if (!pane) return;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = clubTodayDate();
     const daysAhead = config.daysAhead || 10;
     const lastDate = new Date(today);
     lastDate.setDate(lastDate.getDate() + daysAhead - 1);
