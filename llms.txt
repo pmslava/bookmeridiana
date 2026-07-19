@@ -4,7 +4,7 @@
 
 Tenis Kosmos (formally TSU "Kosmos") is a tennis academy in Novi Sad run by coaches Ratko and Ivan. The website does two things:
 
-- **Book a court** — pick a day, a duration (1–3 hours) and a whole-hour time slot; the court is held and confirmed instantly by email.
+- **Book a court** — pick a day, a duration (1–2 hours) and a whole-hour time slot; the court is held and confirmed instantly by email.
 - **Request training** — leave a name and phone number; a coach calls back to agree on a time. Training prices are quoted on the call, not shown online.
 
 Prices are fair, the courts are well kept, and the atmosphere is family-friendly. The interface is available in Serbian (default), English, and Russian.
