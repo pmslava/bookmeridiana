@@ -307,6 +307,42 @@
     return JSON.stringify(a) === JSON.stringify(b);
   }
 
+  // ---- Saved contact (localStorage) ----
+  // Prefill the booking + training forms with the visitor's name/email/phone
+  // from their last submission so repeat bookers don't retype every time.
+  // Every field stays editable; the store is per-browser and local only —
+  // it is never transmitted except inside the booking payload the user
+  // themselves submits. Both forms share one record (it's the same person).
+  const CONTACT_KEY = 'tk_contact_v1'; // bump suffix on shape change
+
+  function loadSavedContact() {
+    try {
+      const raw = localStorage.getItem(CONTACT_KEY);
+      if (!raw) return { name: '', email: '', phone: '' };
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return { name: '', email: '', phone: '' };
+      }
+      return {
+        name: typeof parsed.name === 'string' ? parsed.name : '',
+        email: typeof parsed.email === 'string' ? parsed.email : '',
+        phone: typeof parsed.phone === 'string' ? parsed.phone : '',
+      };
+    } catch (e) {
+      return { name: '', email: '', phone: '' };
+    }
+  }
+
+  function saveContact(contact) {
+    try {
+      localStorage.setItem(CONTACT_KEY, JSON.stringify({
+        name: (contact.name || '').trim(),
+        email: (contact.email || '').trim(),
+        phone: (contact.phone || '').trim(),
+      }));
+    } catch (e) {}
+  }
+
   // Re-render the parts of the UI that depend on settings, after a fresh
   // fetch revealed a real diff vs the cached values we initially rendered
   // with. Skips: an open booking modal (preserves the flow), the training
@@ -1278,6 +1314,8 @@
       </div>
     ` : '';
 
+    const saved = loadSavedContact();
+
     const overlay = document.createElement('div');
     overlay.className = 'booking-modal-overlay';
     overlay.innerHTML = `
@@ -1291,15 +1329,15 @@
         <form id="booking-form">
           <div class="form-group">
             <label>${t('name')} *</label>
-            <input type="text" name="name" required placeholder="${t('namePlaceholder')}">
+            <input type="text" name="name" required value="${escapeHtml(saved.name)}" placeholder="${t('namePlaceholder')}">
           </div>
           <div class="form-group">
             <label>${t('email')} *</label>
-            <input type="email" name="email" required placeholder="${t('emailPlaceholder')}">
+            <input type="email" name="email" required value="${escapeHtml(saved.email)}" placeholder="${t('emailPlaceholder')}">
           </div>
           <div class="form-group">
             <label>${t('phoneOptional')}</label>
-            <input type="tel" name="phone" placeholder="${t('phonePlaceholder')}">
+            <input type="tel" name="phone" value="${escapeHtml(saved.phone)}" placeholder="${t('phonePlaceholder')}">
           </div>
           <div class="form-actions">
             <button type="button" class="btn-secondary" id="cancel-booking">${t('cancel')}</button>
@@ -1358,6 +1396,9 @@
         form.reportValidity();
         return;
       }
+
+      // Remember these details to prefill the next booking (any field editable).
+      saveContact({ name: nameVal, email: emailVal, phone: form.phone.value.trim() });
 
       submitBtn.disabled = true;
       submitBtn.textContent = '…';
@@ -1444,6 +1485,8 @@
       `<button type="button" class="request-pill" data-field="${name}" data-value="${val}">${t(tkey)}</button>`
     ).join('');
 
+    const saved = loadSavedContact();
+
     pane.innerHTML = `
       <div class="request-section">
         <h3>${t('trainingTitle')}</h3>
@@ -1451,15 +1494,15 @@
         <form id="request-form" novalidate>
           <div class="form-group">
             <label>${t('name')} *</label>
-            <input type="text" name="name" required placeholder="${t('namePlaceholder')}">
+            <input type="text" name="name" required value="${escapeHtml(saved.name)}" placeholder="${t('namePlaceholder')}">
           </div>
           <div class="form-group">
             <label>${t('phone')} *</label>
-            <input type="tel" name="phone" required placeholder="${t('phonePlaceholder')}">
+            <input type="tel" name="phone" required value="${escapeHtml(saved.phone)}" placeholder="${t('phonePlaceholder')}">
           </div>
           <div class="form-group">
             <label>${t('email')} *</label>
-            <input type="email" name="email" required placeholder="${t('emailPlaceholder')}">
+            <input type="email" name="email" required value="${escapeHtml(saved.email)}" placeholder="${t('emailPlaceholder')}">
           </div>
           <div class="form-group">
             <label>${t('level')}</label>
@@ -1511,6 +1554,9 @@
         form.reportValidity();
         return;
       }
+
+      // Remember these details to prefill the next booking (any field editable).
+      saveContact({ name: name, email: email, phone: phone });
 
       const readPill = (field) => {
         const active = pane.querySelector(`.pill-group[data-group="${field}"] .request-pill.active`);
