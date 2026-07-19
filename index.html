@@ -7,6 +7,14 @@
   <meta name="description" content="Tenis Kosmos — teniska škola i klub u Novom Sadu na 5 terena Meridiana. Rezervišite teren bez registracije. Fer cene, porodična atmosfera.">
   <link rel="canonical" href="https://teniskosmos.com/">
 
+  <!-- Warm up the connection to the Apps Script backend. app.js fetches
+       availability + settings from script.google.com immediately on load;
+       that request 302-redirects to script.googleusercontent.com, so we
+       preconnect to both origins to shave the TLS/handshake off the data
+       fetch that real users wait on. -->
+  <link rel="preconnect" href="https://script.google.com" crossorigin>
+  <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+
   <!-- Open Graph (for link previews in Telegram, WhatsApp, Facebook, etc.) -->
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Tenis Kosmos">
@@ -154,6 +162,6 @@
   <!-- Footer (populated from config.json by app.js) -->
   <footer class="footer" id="site-footer"></footer>
 
-  <script src="app.js"></script>
+  <script src="app.js" defer></script>
 </body>
 </html>

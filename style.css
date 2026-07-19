@@ -294,6 +294,18 @@ body {
   padding: 0 1rem 3rem;
 }
 
+/* Reserve vertical space for the booking widget before app.js injects it.
+   Without this, #booking-app is 0px at first paint, then grows as the shell,
+   the loading state, and finally the calendar render — each step pushes the
+   footer down and registers a layout shift (the CLS culprit PageSpeed flags).
+   The value is tuned to the mobile court-booking view (tabs + ~3-row day grid
+   + "pick a day" prompt). Content taller than this (a selected day's slot list,
+   the training form) simply grows past it; shorter states leave harmless extra
+   whitespace above the footer. Keeps CLS at ~0 through the load sequence. */
+#booking-app {
+  min-height: 420px;
+}
+
 /* ---- Tabs ---- */
 .tabs {
   display: flex;
