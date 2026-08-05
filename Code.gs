@@ -1316,6 +1316,20 @@ function handleConfirm(token) {
     // clear exactly this marker.
     props.setProperty(slotMarkerKey, cancelToken);
 
+    // Email reminders are driven by a single recurring sweepReminders trigger
+    // (see installReminderSweep), NOT by per-booking triggers — those hit
+    // ScriptApp's hard cap of 20 triggers/script once ~10 bookings were
+    // upcoming. The sweep decides what to send from these two flags. A reminder
+    // starts "handled" (nothing to send) when it's switched off in settings OR
+    // its window is already past at confirm time (e.g. booked <24h ahead) — so
+    // the sweep never fires a stale "day before" the instant such a booking
+    // lands. Each flag flips true once its reminder is actually sent.
+    const nowConfirm = new Date();
+    const dayBeforeAt = new Date(startDate); dayBeforeAt.setDate(dayBeforeAt.getDate() - 1);
+    const twoHoursAt = new Date(startDate); twoHoursAt.setHours(twoHoursAt.getHours() - 2);
+    const wantDayBefore = !!(cfg.reminders && cfg.reminders.dayBefore);
+    const wantTwoHours = !!(cfg.reminders && cfg.reminders.twoHoursBefore);
+
     // Store confirmed booking info (for cancellation and reminders)
     const confirmed = {
       cancelToken: cancelToken,
@@ -1331,7 +1345,9 @@ function handleConfirm(token) {
       startTime: formatTime(startMinutes),
       durationMinutes: durationMinutes,
       slotMarkerKey: slotMarkerKey,
-      confirmedAt: new Date().toISOString(),
+      confirmedAt: nowConfirm.toISOString(),
+      remindedDayBefore: !wantDayBefore || dayBeforeAt <= nowConfirm,
+      remindedTwoHours: !wantTwoHours || twoHoursAt <= nowConfirm,
     };
 
     props.setProperty('confirmed_' + cancelToken, JSON.stringify(confirmed));
@@ -1361,16 +1377,22 @@ function handleConfirm(token) {
   }
 
   // ---- Outside the lock: non-critical follow-ups for the winning confirm. ----
-  // Schedule reminder triggers
-  scheduleReminders(success.cancelToken, success.startDate);
-
   // No separate confirmation email is sent from here on purpose: Google already
   // emailed the guest its native calendar invitation (sendUpdates:'all' above),
   // which carries every detail from the event description and auto-syncs to the
   // client's calendar. Sending our own letter too would put the client back to
   // two emails — the exact thing we set out to avoid.
 
-  // Notify admin(s).
+  // Notify admin(s). This is the operationally critical signal (a coach must
+  // know a court was booked); notifyAdmins swallows its own errors internally.
+  //
+  // Email reminders are NOT scheduled here. A single recurring sweepReminders
+  // trigger (see installReminderSweep) sends them by scanning confirmed
+  // bookings. The old code created two per-booking triggers at this point and
+  // hit ScriptApp's hard cap of 20 triggers/script once bookings picked up —
+  // and because .create() throws at the cap, that failure used to abort the
+  // confirm and skip this very notification. One fixed trigger removes the
+  // ceiling for good, at any volume.
   notifyAdmins(cfg, success.pending, 'created');
 
   return htmlResponse(
@@ -1773,127 +1795,174 @@ function confirmTrainingPage_(token, embed) {
 }
 
 // ============================================================
-// Reminders — schedule and fire
+// Email reminders — ONE recurring "sweep" trigger, not per-booking
 // ============================================================
+//
+// Google caps a script at 20 time-based triggers per user. The old design
+// created two triggers per booking (day-before + 2-hours-before), which blew
+// past that cap once ~10 bookings were upcoming at once. Worse, because
+// ScriptApp.newTrigger().create() THROWS at the cap, it aborted the confirm
+// flow and took down the admin notification that ran right after it (see
+// handleConfirm) — the intermittent "booking on the calendar but no email" bug.
+//
+// This design uses exactly ONE trigger forever: sweepReminders runs every 15
+// minutes, scans confirmed bookings, and sends whichever reminders are due and
+// not yet sent. State lives on each confirmed record (remindedDayBefore /
+// remindedTwoHours), seeded in handleConfirm and flipped true once sent.
+//
+// MIGRATION: run installReminderSweep() ONCE from the editor after deploying —
+// it removes the legacy per-booking triggers and creates the single sweep.
 
-function scheduleReminders(cancelToken, startDate) {
-  const props = PropertiesService.getScriptProperties();
-  const triggerIds = [];
-
-  // 1-day-before reminder
-  const dayBefore = new Date(startDate);
-  dayBefore.setDate(dayBefore.getDate() - 1);
-  if (dayBefore > new Date()) {
-    const t1 = ScriptApp.newTrigger('fireReminder')
-      .timeBased()
-      .at(dayBefore)
-      .create();
-    triggerIds.push(t1.getUniqueId());
-    // Store which cancelToken this trigger belongs to
-    props.setProperty('trigger_' + t1.getUniqueId(), JSON.stringify({
-      cancelToken: cancelToken,
-      type: 'dayBefore',
-    }));
-  }
-
-  // 2-hours-before reminder
-  const twoHoursBefore = new Date(startDate);
-  twoHoursBefore.setHours(twoHoursBefore.getHours() - 2);
-  if (twoHoursBefore > new Date()) {
-    const t2 = ScriptApp.newTrigger('fireReminder')
-      .timeBased()
-      .at(twoHoursBefore)
-      .create();
-    triggerIds.push(t2.getUniqueId());
-    props.setProperty('trigger_' + t2.getUniqueId(), JSON.stringify({
-      cancelToken: cancelToken,
-      type: 'twoHoursBefore',
-    }));
-  }
-
-  // Store trigger IDs on the booking record for cleanup
-  props.setProperty('triggers_' + cancelToken, JSON.stringify(triggerIds));
-}
-
-function fireReminder(e) {
+// Recurring entry point. Installed by installReminderSweep().
+function sweepReminders() {
   const cfg = getSettings();
   const props = PropertiesService.getScriptProperties();
-  const triggerId = e.triggerUid;
-  const triggerRaw = props.getProperty('trigger_' + triggerId);
+  const now = new Date();
+  const all = props.getProperties();
+  for (const key in all) {
+    if (key.indexOf('confirmed_') !== 0) continue;
+    let booking;
+    try { booking = JSON.parse(all[key]); } catch (e) { continue; }
+    try {
+      sweepOneBooking_(cfg, props, now, booking);
+    } catch (err) {
+      Logger.log('sweepReminders: ' + key + ' failed: ' + err.message);
+    }
+  }
+}
 
-  if (!triggerRaw) {
-    Logger.log('Reminder trigger ' + triggerId + ' has no associated booking — skipping.');
-    cleanupTrigger(triggerId);
+// Send any due reminders for one confirmed booking, and garbage-collect the
+// record once the booking is well past and both reminders are done — so the
+// sweep set (and Script Properties) can't grow without bound as volume rises.
+function sweepOneBooking_(cfg, props, now, booking) {
+  const times = readBookingTimes_(booking);
+  const start = new Date(booking.date + 'T' + formatTime(times.startMinutes) + ':00');
+
+  const wantDayBefore = !!(cfg.reminders && cfg.reminders.dayBefore);
+  const wantTwoHours = !!(cfg.reminders && cfg.reminders.twoHoursBefore);
+  const dayHandled = booking.remindedDayBefore || !wantDayBefore;
+  const twoHandled = booking.remindedTwoHours || !wantTwoHours;
+
+  if (dayHandled && twoHandled) {
+    // Nothing left to send. GC ~1 day after the booking ends (it's over, the
+    // cancel link is moot). deleteReminders also clears any legacy trigger_*.
+    const endMs = start.getTime() + times.durationMinutes * 60000;
+    if (now.getTime() - endMs > 24 * 3600 * 1000) {
+      deleteReminders(booking.cancelToken);
+      props.deleteProperty('confirmed_' + booking.cancelToken);
+      if (booking.confirmToken) props.deleteProperty('cancel_lookup_' + booking.confirmToken);
+    }
     return;
   }
 
-  const triggerInfo = JSON.parse(triggerRaw);
-  const bookingRaw = props.getProperty('confirmed_' + triggerInfo.cancelToken);
+  const dueDay = !dayHandled && now.getTime() >= start.getTime() - 24 * 3600 * 1000;
+  const dueTwo = !twoHandled && now.getTime() >= start.getTime() - 2 * 3600 * 1000;
+  if (!dueDay && !dueTwo) return;  // not time yet
 
-  if (!bookingRaw) {
-    Logger.log('Booking for trigger ' + triggerId + ' was cancelled — skipping.');
-    cleanupTrigger(triggerId);
-    props.deleteProperty('trigger_' + triggerId);
+  // Something is due — confirm the court event still exists (a coach may have
+  // deleted it directly in Calendar) before emailing the client.
+  if (!courtEventStillLive_(cfg, booking)) {
+    Logger.log('sweepReminders: event for ' + booking.cancelToken
+      + ' was deleted in Calendar — cleaning up, no reminder sent.');
+    deleteReminders(booking.cancelToken);
+    props.deleteProperty('confirmed_' + booking.cancelToken);
+    if (booking.confirmToken) props.deleteProperty('cancel_lookup_' + booking.confirmToken);
     return;
   }
 
-  const booking = JSON.parse(bookingRaw);
+  // Guard now < start so a delayed sweep never emails a "reminder" for a
+  // booking that already started; mark handled either way so it won't retry.
+  let dirty = false;
+  if (dueDay) {
+    if (now < start) sendReminderEmail_(cfg, booking, 'dayBefore');
+    booking.remindedDayBefore = true;
+    dirty = true;
+  }
+  if (dueTwo) {
+    if (now < start) sendReminderEmail_(cfg, booking, 'twoHoursBefore');
+    booking.remindedTwoHours = true;
+    dirty = true;
+  }
+  if (dirty) props.setProperty('confirmed_' + booking.cancelToken, JSON.stringify(booking));
+}
 
-  // Verify the court calendar event still exists AND is not cancelled.
-  // Coaches sometimes delete a booking directly in Google Calendar
-  // (e.g. the client phoned to cancel), bypassing our cancellation
-  // link. Without this check, reminders would fire for a phantom
-  // booking — annoying for the client and a waste of the 100/day
-  // Gmail quota.
-  //
-  // We deliberately use the Advanced Calendar API (Calendar.Events.get)
-  // rather than CalendarApp.getEventById, because:
-  //   - Our bookings always have an attendee (the client). When the
-  //     organizer deletes such an event, Google marks it status:
-  //     'cancelled' rather than hard-deleting it (so attendees can
-  //     still be notified).
-  //   - CalendarApp.getEventById returns these cancelled events as
-  //     non-null objects, which makes a !!courtEvent check unreliable.
-  //   - Calendar.Events.get exposes the status field, and throws 404
-  //     for true hard-deletes — both of which we treat as "gone".
-  //
-  // On any other (transient) error we send the reminder anyway: missing
-  // a real reminder is worse than sending one for a deleted event.
+// ONE-TIME migration from per-booking triggers to the single sweep trigger.
+// Idempotent — safe to run more than once. Run from the editor after deploy.
+function installReminderSweep() {
+  const props = PropertiesService.getScriptProperties();
+  const now = new Date();
+
+  // 1) Delete every legacy per-booking reminder trigger; ensure one sweep.
+  let removed = 0, hasSweep = false;
+  for (const t of ScriptApp.getProjectTriggers()) {
+    const fn = t.getHandlerFunction();
+    if (fn === 'fireReminder') { ScriptApp.deleteTrigger(t); removed++; }
+    else if (fn === 'sweepReminders') { hasSweep = true; }
+  }
+  if (!hasSweep) {
+    ScriptApp.newTrigger('sweepReminders').timeBased().everyMinutes(15).create();
+  }
+
+  // 2) Backfill flags on bookings confirmed under the old design. Mark a
+  // reminder handled only if it's off in settings or its window is already past
+  // — FUTURE windows are left open so the sweep still fires them for in-flight
+  // bookings whose per-booking triggers we just deleted (no reminder is lost).
+  const cfg = getSettings();
+  const wantDayBefore = !!(cfg.reminders && cfg.reminders.dayBefore);
+  const wantTwoHours = !!(cfg.reminders && cfg.reminders.twoHoursBefore);
+  const all = props.getProperties();
+  let patched = 0;
+  for (const key in all) {
+    if (key.indexOf('confirmed_') !== 0) continue;
+    let b;
+    try { b = JSON.parse(all[key]); } catch (e) { continue; }
+    if (b.remindedDayBefore !== undefined && b.remindedTwoHours !== undefined) continue;
+    try {
+      const times = readBookingTimes_(b);
+      const start = new Date(b.date + 'T' + formatTime(times.startMinutes) + ':00');
+      if (b.remindedDayBefore === undefined) {
+        b.remindedDayBefore = !wantDayBefore || (start.getTime() - 24 * 3600 * 1000) <= now.getTime();
+      }
+      if (b.remindedTwoHours === undefined) {
+        b.remindedTwoHours = !wantTwoHours || (start.getTime() - 2 * 3600 * 1000) <= now.getTime();
+      }
+      props.setProperty(key, JSON.stringify(b));
+      patched++;
+    } catch (err) {
+      Logger.log('installReminderSweep: skipped ' + key + ': ' + err.message);
+    }
+  }
+
+  Logger.log('installReminderSweep: removed ' + removed + ' per-booking trigger(s); sweep '
+    + (hasSweep ? 'already present' : 'created') + '; backfilled ' + patched + ' booking(s).');
+  Logger.log('Project triggers now: ' + ScriptApp.getProjectTriggers().length + ' / 20 max');
+}
+
+// True if the booking's court event still exists and is not cancelled. Coaches
+// sometimes delete a booking directly in Google Calendar (client phoned to
+// cancel), bypassing our cancel link; without this we'd remind for a phantom
+// booking and waste the 100/day Gmail quota. Uses the Advanced Calendar API
+// because CalendarApp.getEventById returns cancelled events as non-null. On a
+// transient (non-404) error we assume live — a missed real reminder is worse
+// than one stray reminder for a deleted event.
+function courtEventStillLive_(cfg, booking) {
   const calId = cfg.courts[booking.courtId];
-  // courtEventId is stored in the "<id>@google.com" form CalendarApp
-  // expects; the Advanced API wants the bare id, so strip the suffix.
+  // courtEventId is stored in "<id>@google.com" form; the Advanced API wants
+  // the bare id, so strip the suffix.
   const advancedEventId = String(booking.courtEventId).replace(/@google\.com$/, '');
-  let eventExists = true;
   try {
     const event = Calendar.Events.get(calId, advancedEventId);
-    if (!event || event.status === 'cancelled') {
-      eventExists = false;
-    }
+    return !(!event || event.status === 'cancelled');
   } catch (err) {
     const msg = String((err && (err.message || err)) || '');
-    if (/Not Found/i.test(msg) || /\b404\b/.test(msg)) {
-      // Hard-deleted — treat as not exists.
-      eventExists = false;
-    } else {
-      Logger.log('fireReminder: error checking event existence — sending reminder anyway: ' + msg);
-      eventExists = true;
-    }
+    if (/Not Found/i.test(msg) || /\b404\b/.test(msg)) return false;  // hard-deleted
+    Logger.log('courtEventStillLive_: transient error, assuming live: ' + msg);
+    return true;
   }
+}
 
-  if (!eventExists) {
-    Logger.log('Calendar event for booking ' + triggerInfo.cancelToken
-      + ' was deleted directly in Google Calendar — skipping reminder and cleaning up all records/triggers.');
-    // Drop both reminder triggers (this one and the sibling) plus the
-    // confirmed record and cancel_lookup index — same cleanup as
-    // handleCancel, minus the emails.
-    deleteReminders(triggerInfo.cancelToken);
-    props.deleteProperty('confirmed_' + triggerInfo.cancelToken);
-    if (booking.confirmToken) {
-      props.deleteProperty('cancel_lookup_' + booking.confirmToken);
-    }
-    return;
-  }
-
+// Build and send one reminder email. type is 'dayBefore' | 'twoHoursBefore'.
+function sendReminderEmail_(cfg, booking, type) {
   const lang = booking.language || 'en';
   const remTimes = readBookingTimes_(booking);
   const startDate = new Date(booking.date + 'T' + formatTime(remTimes.startMinutes) + ':00');
@@ -1903,9 +1972,9 @@ function fireReminder(e) {
   const courtLabel = tr(lang, 'court') + ' ' + booking.courtId;
   const priceStr = formatPrice_(calculateBookingPrice_(cfg, booking), cfg);
 
-  const cancelUrl = actionWrapperUrl_(cfg, 'cancel=' + triggerInfo.cancelToken);
+  const cancelUrl = actionWrapperUrl_(cfg, 'cancel=' + booking.cancelToken);
 
-  const isDayBefore = triggerInfo.type === 'dayBefore';
+  const isDayBefore = type === 'dayBefore';
   const subject = tr(lang, isDayBefore ? 'reminderSubjectDay' : 'reminderSubjectHours');
   const bodyIntro = tr(lang, isDayBefore ? 'reminderBodyDay' : 'reminderBodyHours');
 
@@ -1932,6 +2001,51 @@ function fireReminder(e) {
     + emailParagraph_(tr(lang, 'seeYou')));
 
   MailApp.sendEmail(booking.email, subject, emailBody, { name: emailNameOf_(cfg), htmlBody: htmlBody });
+}
+
+function fireReminder(e) {
+  const cfg = getSettings();
+  const props = PropertiesService.getScriptProperties();
+  const triggerId = e.triggerUid;
+  const triggerRaw = props.getProperty('trigger_' + triggerId);
+
+  if (!triggerRaw) {
+    Logger.log('Reminder trigger ' + triggerId + ' has no associated booking — skipping.');
+    cleanupTrigger(triggerId);
+    return;
+  }
+
+  const triggerInfo = JSON.parse(triggerRaw);
+  const bookingRaw = props.getProperty('confirmed_' + triggerInfo.cancelToken);
+
+  if (!bookingRaw) {
+    Logger.log('Booking for trigger ' + triggerId + ' was cancelled — skipping.');
+    cleanupTrigger(triggerId);
+    props.deleteProperty('trigger_' + triggerId);
+    return;
+  }
+
+  const booking = JSON.parse(bookingRaw);
+
+  // Court event gone (coach deleted it in Calendar)? Clean up, don't remind.
+  if (!courtEventStillLive_(cfg, booking)) {
+    Logger.log('Calendar event for booking ' + triggerInfo.cancelToken
+      + ' was deleted directly in Google Calendar — skipping reminder and cleaning up all records/triggers.');
+    deleteReminders(triggerInfo.cancelToken);
+    props.deleteProperty('confirmed_' + triggerInfo.cancelToken);
+    if (booking.confirmToken) {
+      props.deleteProperty('cancel_lookup_' + booking.confirmToken);
+    }
+    return;
+  }
+
+  sendReminderEmail_(cfg, booking, triggerInfo.type);
+
+  // Mirror the send into the sweep's flags so, if this booking outlives the
+  // migration, sweepReminders won't re-send the same reminder.
+  if (triggerInfo.type === 'dayBefore') booking.remindedDayBefore = true;
+  else if (triggerInfo.type === 'twoHoursBefore') booking.remindedTwoHours = true;
+  props.setProperty('confirmed_' + triggerInfo.cancelToken, JSON.stringify(booking));
 
   // Clean up this trigger
   cleanupTrigger(triggerId);
