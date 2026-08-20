@@ -401,6 +401,13 @@ const I18N = {
     trConfirmedIntro: 'Thanks! We have received your training request and will call you back shortly.',
     trHtmlConfirmedTitle: 'Training request received',
     trHtmlConfirmedBody: 'Thanks, {name}! We will call you back shortly at {phone}.<br><br><a href="{url}">Back to {site}</a>',
+    // Decline-notice: client declined the calendar invite instead of using the
+    // cancel link. Sent once by the sweep. Declining does NOT cancel.
+    declineNoticeSubject: 'Your booking is still reserved — {date} at {time}',
+    declineNoticeIntro: 'We noticed you declined the calendar invitation for your court booking:',
+    declineNoticeExplain: 'Declining the calendar invitation does NOT cancel the booking — the court is still reserved for you.',
+    declineNoticeCancelPrompt: 'If you would like to cancel, click below and confirm on the page:',
+    declineNoticeIgnore: 'If you still plan to come, just ignore this email — nothing else is needed.',
   },
   sr: {
     dayNames: ['Ned','Pon','Uto','Sre','Čet','Pet','Sub'],
@@ -445,6 +452,11 @@ const I18N = {
     trConfirmedIntro: 'Hvala! Primili smo vaš zahtev za trening i uskoro ćemo vas pozvati.',
     trHtmlConfirmedTitle: 'Zahtev za trening primljen',
     trHtmlConfirmedBody: 'Hvala, {name}! Uskoro ćemo vas pozvati na {phone}.<br><br><a href="{url}">Nazad na {site}</a>',
+    declineNoticeSubject: 'Vaša rezervacija i dalje važi — {date} u {time}',
+    declineNoticeIntro: 'Primetili smo da ste odbili pozivnicu za kalendar za vašu rezervaciju terena:',
+    declineNoticeExplain: 'Odbijanje pozivnice za kalendar NE otkazuje rezervaciju — teren je i dalje rezervisan za vas.',
+    declineNoticeCancelPrompt: 'Ako želite da otkažete, kliknite ispod i potvrdite na stranici:',
+    declineNoticeIgnore: 'Ako ipak planirate da dođete, samo zanemarite ovaj email — ništa drugo nije potrebno.',
   },
   ru: {
     dayNames: ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'],
@@ -489,6 +501,11 @@ const I18N = {
     trConfirmedIntro: 'Спасибо! Мы получили вашу заявку на тренировку и скоро перезвоним.',
     trHtmlConfirmedTitle: 'Заявка на тренировку получена',
     trHtmlConfirmedBody: 'Спасибо, {name}! Мы скоро перезвоним вам на номер {phone}.<br><br><a href="{url}">Вернуться на {site}</a>',
+    declineNoticeSubject: 'Ваше бронирование в силе — {date} в {time}',
+    declineNoticeIntro: 'Мы заметили, что вы отклонили приглашение в календаре для вашего бронирования корта:',
+    declineNoticeExplain: 'Отклонение приглашения в календаре НЕ отменяет бронирование — корт по-прежнему зарезервирован за вами.',
+    declineNoticeCancelPrompt: 'Если вы хотите отменить, нажмите ниже и подтвердите на странице:',
+    declineNoticeIgnore: 'Если вы всё же планируете прийти, просто проигнорируйте это письмо — больше ничего не требуется.',
   },
 };
 
@@ -1348,6 +1365,7 @@ function handleConfirm(token) {
       confirmedAt: nowConfirm.toISOString(),
       remindedDayBefore: !wantDayBefore || dayBeforeAt <= nowConfirm,
       remindedTwoHours: !wantTwoHours || twoHoursAt <= nowConfirm,
+      declineNoticeSent: false,
     };
 
     props.setProperty('confirmed_' + cancelToken, JSON.stringify(confirmed));
@@ -1823,6 +1841,16 @@ function sweepReminders() {
     if (key.indexOf('confirmed_') !== 0) continue;
     let booking;
     try { booking = JSON.parse(all[key]); } catch (e) { continue; }
+    // Decline scan runs BEFORE the reminder pass so the reminder path's
+    // delete/GC (courtEventStillLive_ cleanup or the ~24h-after-end GC) is the
+    // LAST write on this record and always wins — the scan can never resurrect
+    // a record the reminder path removes in the same sweep. Separate try/catch
+    // so a decline-scan failure can never abort the reminder for this booking.
+    try {
+      scanDeclineNotice_(cfg, props, now, booking);
+    } catch (err) {
+      Logger.log('scanDeclineNotice_: ' + key + ' failed: ' + err.message);
+    }
     try {
       sweepOneBooking_(cfg, props, now, booking);
     } catch (err) {
@@ -2001,6 +2029,128 @@ function sendReminderEmail_(cfg, booking, type) {
     + emailParagraph_(tr(lang, 'seeYou')));
 
   MailApp.sendEmail(booking.email, subject, emailBody, { name: emailNameOf_(cfg), htmlBody: htmlBody });
+}
+
+// Build and send the one-time "you declined the invite, but the booking is
+// still reserved" notice. Same template system as sendReminderEmail_, minus
+// the price row (this is about the reservation standing, not payment). Reuses
+// the stored cancelToken — no new token is minted. Sends via MailApp only (the
+// Gmail-service send scope isn't declared and would throw).
+function sendDeclineNoticeEmail_(cfg, booking) {
+  const lang = booking.language || 'en';
+  const times = readBookingTimes_(booking);
+  const startDate = new Date(booking.date + 'T' + formatTime(times.startMinutes) + ':00');
+  const friendlyDate = formatFriendlyDateLang(startDate, lang);
+  const timeStr = formatTime(times.startMinutes);
+  const endTimeStr = formatTime(times.startMinutes + times.durationMinutes);
+  const courtLabel = tr(lang, 'court') + ' ' + booking.courtId;
+  const cancelUrl = actionWrapperUrl_(cfg, 'cancel=' + booking.cancelToken);
+  const subject = tr(lang, 'declineNoticeSubject', { date: friendlyDate, time: timeStr });
+
+  let emailBody = tr(lang, 'hi') + ' ' + booking.name + ',\n\n';
+  emailBody += tr(lang, 'declineNoticeIntro') + '\n\n';
+  emailBody += tr(lang, 'date') + ': ' + friendlyDate + '\n';
+  emailBody += tr(lang, 'time') + ': ' + timeStr + ' – ' + endTimeStr + '\n';
+  emailBody += courtLabel + '\n\n';
+  emailBody += tr(lang, 'declineNoticeExplain') + '\n\n';
+  emailBody += tr(lang, 'declineNoticeCancelPrompt') + '\n' + cancelUrl + '\n\n';
+  emailBody += tr(lang, 'declineNoticeIgnore') + '\n\n';
+  emailBody += findUsBlock_(cfg, lang);
+  emailBody += '— ' + emailNameOf_(cfg);
+
+  const htmlBody = emailShell_(cfg, lang, booking.name,
+    emailParagraph_(tr(lang, 'declineNoticeIntro'))
+    + emailDetailsHtml_([
+        { label: tr(lang, 'date'), value: friendlyDate },
+        { label: tr(lang, 'time'), value: timeStr + ' – ' + endTimeStr },
+        { label: tr(lang, 'court'), value: String(booking.courtId) },
+      ])
+    + emailParagraph_(tr(lang, 'declineNoticeExplain'))
+    + emailButton_(tr(lang, 'cancelAction'), cancelUrl)
+    + emailNote_(tr(lang, 'declineNoticeIgnore')));
+
+  MailApp.sendEmail(booking.email, subject, emailBody, { name: emailNameOf_(cfg), htmlBody: htmlBody });
+}
+
+// Per-booking decline scan, called from the sweep before the reminder pass.
+// For a FUTURE confirmed booking not yet flagged, fetch the court event and,
+// if the client guest's responseStatus is 'declined', send the one-time notice
+// then persist declineNoticeSent so it never fires twice. Send-first /
+// persist-second: a MailApp throw (e.g. 100/day quota) leaves the flag unset so
+// the next sweep retries (a rare duplicate on a crash between send and persist
+// is acceptable; silent non-delivery is not). Terminal states (missing event
+// id, deleted/cancelled event) set the flag to stop re-querying the Calendar
+// API forever; transient errors do NOT flag and retry next sweep.
+function scanDeclineNotice_(cfg, props, now, booking) {
+  if (booking.declineNoticeSent) return;  // one-time gate
+
+  const recKey = 'confirmed_' + booking.cancelToken;
+
+  // Only matters before play. This guard also means a record eligible for the
+  // reminder-path GC (always ≥24h past END, hence past start) returns here
+  // before any setProperty — so the scan can never touch a GC'd record.
+  const times = readBookingTimes_(booking);
+  const start = new Date(booking.date + 'T' + formatTime(times.startMinutes) + ':00');
+  if (start.getTime() <= now.getTime()) return;  // past — skip
+
+  // Unverifiable forever (record predates courtEventId, or it's blank): flag
+  // once so we stop re-scanning it every sweep.
+  if (!booking.courtEventId) {
+    persistDeclineFlag_(props, recKey, booking);
+    return;
+  }
+  const calId = cfg.courts && cfg.courts[booking.courtId];
+  if (!calId) return;  // court misconfigured — don't flag, retry later
+
+  const bareId = String(booking.courtEventId).replace(/@google\.com$/, '');
+  let event;
+  try {
+    event = Calendar.Events.get(calId, bareId);
+  } catch (err) {
+    const msg = String((err && (err.message || err)) || '').toLowerCase();
+    if (msg.indexOf('not found') !== -1 || msg.indexOf('404') !== -1
+        || msg.indexOf('410') !== -1 || msg.indexOf('deleted') !== -1) {
+      // Coach deleted the event directly in Calendar → nothing to notify. Flag
+      // to stop re-querying; the reminder sweep GCs the record later.
+      persistDeclineFlag_(props, recKey, booking);
+      return;
+    }
+    Logger.log('scanDeclineNotice_: transient Calendar error for '
+      + booking.cancelToken + ', will retry: ' + msg);
+    return;  // transient — do NOT flag
+  }
+
+  if (!event || event.status === 'cancelled') {
+    persistDeclineFlag_(props, recKey, booking);
+    return;
+  }
+
+  const target = String(booking.email || '').toLowerCase();
+  let declined = false;
+  const attendees = event.attendees || [];
+  for (let i = 0; i < attendees.length; i++) {
+    const a = attendees[i];
+    if (a && a.email && String(a.email).toLowerCase() === target) {
+      declined = (a.responseStatus === 'declined');  // ONLY 'declined' counts
+      break;
+    }
+  }
+  if (!declined) return;  // accepted/tentative/needsAction/absent — say nothing
+
+  // Send FIRST, persist SECOND (see function header).
+  sendDeclineNoticeEmail_(cfg, booking);
+  persistDeclineFlag_(props, recKey, booking);
+}
+
+// Set declineNoticeSent on the in-memory record and write it back — but only if
+// the record still exists. Re-reading immediately before the write closes a
+// resurrection race: between the sweep's one-shot getProperties() snapshot and
+// now, the record may have been deleted (client clicked cancel mid-sweep, or
+// the reminder path GC'd it), and a blind setProperty here would recreate it.
+function persistDeclineFlag_(props, recKey, booking) {
+  if (!props.getProperty(recKey)) return;  // gone — don't resurrect
+  booking.declineNoticeSent = true;
+  props.setProperty(recKey, JSON.stringify(booking));
 }
 
 function fireReminder(e) {
