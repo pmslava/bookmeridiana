@@ -2142,15 +2142,27 @@ function scanDeclineNotice_(cfg, props, now, booking) {
   persistDeclineFlag_(props, recKey, booking);
 }
 
-// Set declineNoticeSent on the in-memory record and write it back — but only if
-// the record still exists. Re-reading immediately before the write closes a
-// resurrection race: between the sweep's one-shot getProperties() snapshot and
-// now, the record may have been deleted (client clicked cancel mid-sweep, or
-// the reminder path GC'd it), and a blind setProperty here would recreate it.
+// Persist declineNoticeSent, guarding three races against the sweep's one-shot
+// getProperties() snapshot. (1) Resurrection: the record may have been deleted
+// since the snapshot (client cancelled mid-sweep, reminder path GC'd it) — so
+// re-read and bail if gone rather than recreating it with a blind setProperty.
+// (2) Clobbering a concurrent sweep's reminder flags: a parallel execution (the
+// 15-min trigger takes no lock) may have flipped remindedDayBefore/TwoHours and
+// persisted them after our snapshot — so merge the flag onto the FRESH stored
+// record, not our stale in-memory one, else we'd revert its flags and re-fire a
+// reminder. (3) Clobbering our own flag later this sweep: sweepOneBooking_ runs
+// next on this same in-memory object and writes the WHOLE thing back if a
+// reminder fires — so set the flag in memory too, or that write erases it and
+// the decline email re-fires next sweep. A corrupt stored value falls back to
+// writing the in-memory booking so a bad blob can't block the flag persist.
 function persistDeclineFlag_(props, recKey, booking) {
-  if (!props.getProperty(recKey)) return;  // gone — don't resurrect
-  booking.declineNoticeSent = true;
-  props.setProperty(recKey, JSON.stringify(booking));
+  booking.declineNoticeSent = true;  // in-memory too: sweepOneBooking_ may write this object back later this sweep
+  const raw = props.getProperty(recKey);
+  if (!raw) return;  // gone — don't resurrect
+  let fresh;
+  try { fresh = JSON.parse(raw); } catch (e) { fresh = booking; }
+  fresh.declineNoticeSent = true;
+  props.setProperty(recKey, JSON.stringify(fresh));
 }
 
 function fireReminder(e) {
