@@ -10,6 +10,6 @@ node_modules/
 # Keep a local working copy but never commit it.
 admin.html
 
-# Marketing strategy and partner proposals are internal — repo is publicly
-# served via GitHub Pages, so keep these out.
+# Marketing strategy and partner proposals are internal — the repo root is
+# publicly served (Cloudflare Pages), so keep these out.
 docs/

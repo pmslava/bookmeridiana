@@ -24,7 +24,8 @@
 //
 // Requirements:
 //   - Calendar Advanced Service enabled in the script editor.
-//   - Tasks Advanced Service enabled (for training-request Google Tasks).
+//   - Google Tasks is called via its REST API with the `tasks` OAuth
+//     scope (declared in appsscript.json) — NOT an advanced service.
 //   - Script timezone set to Europe/Belgrade in Project Settings.
 // ============================================================
 
